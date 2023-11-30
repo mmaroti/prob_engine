@@ -1,0 +1,16 @@
+[build-system]
+requires = ["flit_core >=3.2,<4"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "prob_engine"
+description = "Probabilistic Reasoning Framework"
+authors = [{ name = "Miklos Maroti", email = "mmaroti@gmail.com" }]
+classifiers = [
+  "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+]
+dynamic = ["version"]
+dependencies = ["torch", "click"]
+
+[project.scripts]
+prober = "prober:__main__.cli"
