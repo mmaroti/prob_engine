@@ -19,3 +19,9 @@ import click
 @click.group()
 def cli():
     pass
+
+
+@cli.command()
+def test():
+    from . import uniform_grid
+    uniform_grid.test()
