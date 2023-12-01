@@ -13,4 +13,4 @@ dynamic = ["version"]
 dependencies = ["torch", "click"]
 
 [project.scripts]
-prober = "prober:__main__.cli"
+prob_engine = "prob_engine:__main__.cli"
