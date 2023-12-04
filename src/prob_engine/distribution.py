@@ -19,18 +19,18 @@ from typing import Iterator
 
 
 class Distribution:
-    def __init__(self, sample_shape: torch.Size):
+    def __init__(self, event_shape: torch.Size):
         """
-        Creates an abstract multi variate distribution whose samples have
-        the specified shape.
+        Creates an abstract multi variate distribution whose events have
+        the specified event shape.
         """
-        assert isinstance(sample_shape, torch.Size)
-        self._sample_shape = sample_shape
+        assert isinstance(event_shape, torch.Size)
+        self._sample_shape = event_shape
 
     @property
-    def sample_shape(self) -> torch.Size:
+    def event_shape(self) -> torch.Size:
         """
-        Returns the shape of samples that this distribution can produce.
+        Returns the shape of events that this distribution can produce.
         """
         return self._sample_shape
 
@@ -42,15 +42,15 @@ class Distribution:
         if False:
             yield
 
-    def sample(self, batch_shape: torch.Size = torch.Size()) -> torch.Tensor:
+    def sample(self, sample_shape: torch.Size = torch.Size()) -> torch.Tensor:
         """
         Randomly samples from the distribution batch many times and returns
-        a tensor of shape batch_shape + sample_shape.
+        a tensor of shape sample_shape + sample_shape.
         """
         raise NotImplemented()
 
     def plot_sample_histogram(self):
-        numel = self.sample_shape.numel()
+        numel = self.event_shape.numel()
         if numel == 1:
             samples = self.sample(torch.Size([100000]))
             samples = samples.detach().cpu().flatten().numpy()

@@ -57,42 +57,24 @@ class UniformGrid(Distribution):
     def parameters(self) -> Iterator[torch.nn.Parameter]:
         yield self._parameter
 
-    def sample(self, batch_shape: torch.Size = torch.Size()) -> torch.Tensor:
-        # print("batch shape:", batch_shape)
-        # print("sample shape:", self.sample_shape)
-        # print("parameter shape:", self._parameter.shape)
-
+    def sample(self, sample_shape: torch.Size = torch.Size()) -> torch.Tensor:
         flat_indices = torch.multinomial(
             self._parameter.flatten(),
-            batch_shape.numel(),
+            sample_shape.numel(),
             replacement=True)
-        # print("flat indices shape:", flat_indices.shape)
-        # print("flat indices:", flat_indices)
 
         flat_coords = torch.empty(
-            (flat_indices.shape[0], self.sample_shape.numel()),
+            (flat_indices.shape[0], self.event_shape.numel()),
             dtype=torch.long)
-        # print("flat coords shape:", flat_coords.shape)
 
         for i, d in enumerate(reversed(self._parameter.shape)):
             flat_coords[:, -1 - i] = flat_indices % d
             flat_indices //= d
-        # print("flat coords:")
-        # print(flat_coords)
 
-        coords = flat_coords.reshape(batch_shape + self.sample_shape)
-        # print("coords shape:", coords.shape)
-        # print("coords:")
-        # print(coords)
-
+        coords = flat_coords.reshape(sample_shape + self.event_shape)
         coords = coords.float() + torch.rand(coords.shape)
 
-        # print("min_bounds:", self.min_bounds)
-        # print("max_bounds:", self.max_bounds)
-        # print("cell size:", self.cell_size)
-
         values = self.min_bounds + coords * self.cell_size
-        # print("values:", values)
         return values
 
 
