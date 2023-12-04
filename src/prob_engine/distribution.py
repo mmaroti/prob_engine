@@ -13,12 +13,12 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import abc
+from matplotlib import pyplot
 import torch
 from typing import Iterator
 
 
-class Distribution(abc.ABC):
+class Distribution:
     def __init__(self, sample_shape: torch.Size):
         """
         Creates an abstract multi variate distribution whose samples have
@@ -42,10 +42,25 @@ class Distribution(abc.ABC):
         if False:
             yield
 
-    @abc.abstractmethod
     def sample(self, batch_shape: torch.Size = torch.Size()) -> torch.Tensor:
         """
         Randomly samples from the distribution batch many times and returns
         a tensor of shape batch_shape + sample_shape.
         """
         raise NotImplemented()
+
+    def plot_sample_histogram(self):
+        numel = self.sample_shape.numel()
+        if numel == 1:
+            samples = self.sample(torch.Size([100000]))
+            samples = samples.detach().cpu().flatten().numpy()
+            pyplot.hist(samples, bins=60, density=True)
+            pyplot.show()
+        elif numel == 2:
+            samples = self.sample(torch.Size([100000]))
+            samples = samples.detach().cpu().reshape((-1, 2)).numpy()
+            pyplot.hist2d(samples[:, 0], samples[:, 1],
+                          bins=[60, 60], density=True)
+            pyplot.show()
+        else:
+            raise ValueError("invalid sample size")

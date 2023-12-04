@@ -58,46 +58,52 @@ class UniformGrid(Distribution):
         yield self._parameter
 
     def sample(self, batch_shape: torch.Size = torch.Size()) -> torch.Tensor:
-        print("batch shape:", batch_shape)
-        print("sample shape:", self.sample_shape)
-        print("parameter shape:", self._parameter.shape)
+        # print("batch shape:", batch_shape)
+        # print("sample shape:", self.sample_shape)
+        # print("parameter shape:", self._parameter.shape)
 
         flat_indices = torch.multinomial(
             self._parameter.flatten(),
             batch_shape.numel(),
             replacement=True)
-        print("flat indices shape:", flat_indices.shape)
-        print("flat indices:", flat_indices)
+        # print("flat indices shape:", flat_indices.shape)
+        # print("flat indices:", flat_indices)
 
         flat_coords = torch.empty(
             (flat_indices.shape[0], self.sample_shape.numel()),
             dtype=torch.long)
-        print("flat coords shape:", flat_coords.shape)
+        # print("flat coords shape:", flat_coords.shape)
 
         for i, d in enumerate(reversed(self._parameter.shape)):
             flat_coords[:, -1 - i] = flat_indices % d
             flat_indices //= d
-        print("flat coords:")
-        print(flat_coords)
+        # print("flat coords:")
+        # print(flat_coords)
 
         coords = flat_coords.reshape(batch_shape + self.sample_shape)
-        print("coords shape:", coords.shape)
-        print("coords:")
-        print(coords)
+        # print("coords shape:", coords.shape)
+        # print("coords:")
+        # print(coords)
 
         coords = coords.float() + torch.rand(coords.shape)
 
-        print("min_bounds:", self.min_bounds)
-        print("max_bounds:", self.max_bounds)
-        print("cell size:", self.cell_size)
+        # print("min_bounds:", self.min_bounds)
+        # print("max_bounds:", self.max_bounds)
+        # print("cell size:", self.cell_size)
 
         values = self.min_bounds + coords * self.cell_size
-        print("values:", values)
+        # print("values:", values)
+        return values
 
 
 def test():
+    if False:
+        grid = UniformGrid(torch.tensor(
+            [[[-1.0, -1.0], [-1.0, -1.0]], [[1.0, 1.0], [1.0, 1.0]]]),
+            torch.tensor([[2, 3], [4, 5]]))
+        grid.sample(torch.Size([3, 2]))
+        # grid.sample()
+
     grid = UniformGrid(torch.tensor(
-        [[[-1.0, -1.0], [-1.0, -1.0]], [[1.0, 1.0], [1.0, 1.0]]]),
-        torch.tensor([[2, 3], [4, 5]]))
-    grid.sample(torch.Size([3, 2]))
-    # grid.sample()
+        [[-1.0, -1.0], [1.0, 1.0]]), torch.tensor([4, 5]))
+    grid.plot_sample_histogram()
