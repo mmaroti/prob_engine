@@ -30,12 +30,17 @@ class UniformGrid(Distribution):
         Distribution.__init__(self, counts.shape)
         self._bounds = bounds.detach().float()
         self._counts = counts.detach().cpu().int()
+        self._cell_size = (self._bounds[1] - self._bounds[0]) / self._counts
 
-        value = torch.rand(
+        # absolute value and normalization is done later
+        self._parameter = torch.rand(
             size=torch.Size(self._counts.flatten()),
             dtype=self._bounds.dtype,
             device=self._bounds.device)
-        self._parameter = value / torch.sum(value)
+
+        if False:
+            self._parameter = self._parameter.abs()
+            self._parameter /= torch.sum(self._parameter)
 
     @property
     def bounds(self) -> torch.Tensor:
@@ -51,7 +56,7 @@ class UniformGrid(Distribution):
 
     @property
     def cell_size(self) -> torch.Tensor:
-        return (self._bounds[1] - self._bounds[0]) / self._counts
+        return self._cell_size
 
     @property
     def parameters(self) -> Iterator[torch.nn.Parameter]:
@@ -59,23 +64,60 @@ class UniformGrid(Distribution):
 
     def sample(self, sample_shape: torch.Size = torch.Size()) -> torch.Tensor:
         flat_indices = torch.multinomial(
-            self._parameter.flatten(),
+            self._parameter.view(self._parameter.numel()).abs(),
             sample_shape.numel(),
             replacement=True)
 
         flat_coords = torch.empty(
-            (flat_indices.shape[0], self.event_shape.numel()),
+            (sample_shape.numel(), self.event_shape.numel()),
             dtype=torch.long)
 
         for i, d in enumerate(reversed(self._parameter.shape)):
             flat_coords[:, -1 - i] = flat_indices % d
             flat_indices //= d
 
-        coords = flat_coords.reshape(sample_shape + self.event_shape)
+        coords = flat_coords.view(sample_shape + self.event_shape)
         coords = coords.float() + torch.rand(coords.shape)
 
         values = self.min_bounds + coords * self.cell_size
         return values
+
+    def log_prob(self, sample: torch.Tensor) -> torch.Tensor:
+        sample_shape = sample.shape[:len(sample.shape) - len(self.event_shape)]
+        assert sample.shape == sample_shape + self.event_shape
+
+        flat_sample = sample.view(torch.Size(
+            [sample_shape.numel(), self.event_shape.numel()]))
+
+        flat_coords = ((flat_sample - self.min_bounds) /
+                       self._cell_size).floor().long()
+        # print(flat_coords)
+
+        flat_indices = torch.empty(flat_sample.shape[0], dtype=torch.long)
+        flat_invalid = torch.zeros(flat_sample.shape[0], dtype=torch.bool)
+        for i, d in enumerate(self._parameter.shape):
+            flat_invalid |= flat_coords[:, i] < 0
+            flat_invalid |= flat_coords[:, i] >= self._counts[i]
+            if i == 0:
+                flat_indices = flat_coords[:, 0]
+            else:
+                flat_indices *= d
+                flat_indices += flat_coords[:, i]
+
+        # print(flat_invalid)
+        # print(flat_indices)
+
+        flat_indices[flat_invalid] = 0
+        # print(flat_indices)
+
+        param = self._parameter.view(self._parameter.numel()).abs()
+        param /= torch.sum(param)
+
+        flat_probs = param[flat_indices]
+        flat_probs[flat_invalid] = 0.0
+        # print(flat_probs)
+
+        return flat_probs.view(sample_shape)
 
 
 def test():
@@ -86,6 +128,15 @@ def test():
         grid.sample(torch.Size([3, 2]))
         # grid.sample()
 
-    grid = UniformGrid(torch.tensor(
-        [[-1.0, -1.0], [1.0, 1.0]]), torch.tensor([4, 5]))
-    grid.plot_sample_histogram()
+    if False:
+        grid = UniformGrid(torch.tensor(
+            [[-1.0, -1.0], [1.0, 1.0]]), torch.tensor([4, 5]))
+        grid.plot_sample_histogram()
+
+    if True:
+        grid = UniformGrid(torch.tensor(
+            [[-1.0, -1.0], [1.0, 1.0]]), torch.tensor([4, 4]))
+        print(grid._parameter)
+        print(grid.log_prob(torch.tensor([-0.9, 0.1])))
+        print(grid.log_prob(torch.tensor(
+            [[-0.9, 0.1], [0.9, -0.1], [-1.1, 0.0]])))

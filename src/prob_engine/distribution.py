@@ -45,19 +45,32 @@ class Distribution:
     def sample(self, sample_shape: torch.Size = torch.Size()) -> torch.Tensor:
         """
         Randomly samples from the distribution batch many times and returns
-        a tensor of shape sample_shape + sample_shape.
+        a tensor of shape sample_shape + event_shape.
         """
         raise NotImplemented()
 
-    def plot_sample_histogram(self):
+    def log_prob(self, sample: torch.Tensor) -> torch.Tensor:
+        """
+        Calculates the logarithm of the probability density function at the
+        given sample. The input is of shape sample_shape + event_shape and
+        the output is of shape sample_shape.
+        """
+        raise NotImplemented()
+
+    def plot_sample_histogram(self, count=100000):
+        """
+        Takes count many samples from the distribution and plots the resulting
+        histogram. This method assume that the dimension of the distribution
+        is one or two.
+        """
         numel = self.event_shape.numel()
         if numel == 1:
-            samples = self.sample(torch.Size([100000]))
+            samples = self.sample(torch.Size([count]))
             samples = samples.detach().cpu().flatten().numpy()
             pyplot.hist(samples, bins=60, density=True)
             pyplot.show()
         elif numel == 2:
-            samples = self.sample(torch.Size([100000]))
+            samples = self.sample(torch.Size([count]))
             samples = samples.detach().cpu().reshape((-1, 2)).numpy()
             pyplot.hist2d(samples[:, 0], samples[:, 1],
                           bins=[60, 60], density=True)
