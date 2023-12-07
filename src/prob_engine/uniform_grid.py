@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from typing import Iterator
+from typing import Iterator, Optional
 import torch
 
 from .distribution import Distribution
@@ -22,21 +22,22 @@ from .distribution import Distribution
 class UniformGrid(Distribution):
     def __init__(self,
                  bounds: torch.Tensor,
-                 counts: torch.Tensor):
+                 counts: torch.Tensor,
+                 device: Optional[str] = None):
         assert bounds.shape[0] == 2 and bounds.shape[1:] == counts.shape
         assert torch.all(bounds[0] < bounds[1]).item() \
             and torch.all(counts >= 1).item()
 
-        Distribution.__init__(self, counts.shape)
-        self._bounds = bounds.detach().float()
-        self._counts = counts.detach().cpu().int()
+        Distribution.__init__(self, counts.shape, device=device)
+        self._bounds = bounds.to(dtype=torch.float32, device=self._device)
+        self._counts = counts.to(dtype=torch.int32, device=self._device)
         self._cell_size = (self._bounds[1] - self._bounds[0]) / self._counts
 
         # absolute value and normalization is done later
         self._parameter = torch.rand(
             size=torch.Size(self._counts.flatten()),
-            dtype=self._bounds.dtype,
-            device=self._bounds.device)
+            dtype=torch.float32,
+            device=self.device)
 
         if False:
             self._parameter = self._parameter.abs()
@@ -55,6 +56,10 @@ class UniformGrid(Distribution):
         return self._bounds[1]
 
     @property
+    def counts(self) -> torch.Tensor:
+        return self._counts
+
+    @property
     def cell_size(self) -> torch.Tensor:
         return self._cell_size
 
@@ -70,14 +75,15 @@ class UniformGrid(Distribution):
 
         flat_coords = torch.empty(
             (sample_shape.numel(), self.event_shape.numel()),
-            dtype=torch.long)
+            dtype=torch.long, device=self._device)
 
         for i, d in enumerate(reversed(self._parameter.shape)):
             flat_coords[:, -1 - i] = flat_indices % d
             flat_indices //= d
 
-        coords = flat_coords.view(sample_shape + self.event_shape)
-        coords = coords.float() + torch.rand(coords.shape)
+        coords = flat_coords.view(sample_shape + self.event_shape).float()
+        coords += torch.rand(coords.shape,
+                             dtype=torch.float32, device=self._device)
 
         values = self.min_bounds + coords * self.cell_size
         return values
@@ -86,6 +92,7 @@ class UniformGrid(Distribution):
         sample_shape = sample.shape[:len(sample.shape) - len(self.event_shape)]
         assert sample.shape == sample_shape + self.event_shape
 
+        sample = sample.to(dtype=torch.float32, device=self._device)
         flat_sample = sample.view(torch.Size(
             [sample_shape.numel(), self.event_shape.numel()]))
 
@@ -93,8 +100,10 @@ class UniformGrid(Distribution):
                        self._cell_size).floor().long()
         # print(flat_coords)
 
-        flat_indices = torch.empty(flat_sample.shape[0], dtype=torch.long)
-        flat_invalid = torch.zeros(flat_sample.shape[0], dtype=torch.bool)
+        flat_indices = torch.empty(flat_sample.shape[0],
+                                   dtype=torch.long, device=self._device)
+        flat_invalid = torch.zeros(flat_sample.shape[0],
+                                   dtype=torch.bool, device=self._device)
         for i, d in enumerate(self._parameter.shape):
             flat_invalid |= flat_coords[:, i] < 0
             flat_invalid |= flat_coords[:, i] >= self._counts[i]

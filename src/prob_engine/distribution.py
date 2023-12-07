@@ -15,17 +15,22 @@
 
 from matplotlib import pyplot
 import torch
-from typing import Iterator
+from typing import Iterator, Optional
 
 
 class Distribution:
-    def __init__(self, event_shape: torch.Size):
+    def __init__(self, event_shape: torch.Size, device: Optional[str] = None):
         """
-        Creates an abstract multi variate distribution whose events have
-        the specified event shape.
+        Creates a multi variate distribution whose events have the specified
+        event shape on the given device. If the device is not specified, then
+        it will be automatically selected between cuda and cpu.
         """
         assert isinstance(event_shape, torch.Size)
         self._sample_shape = event_shape
+
+        if device is None:
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        self._device = device
 
     @property
     def event_shape(self) -> torch.Size:
@@ -33,6 +38,14 @@ class Distribution:
         Returns the shape of events that this distribution can produce.
         """
         return self._sample_shape
+
+    @property
+    def device(self) -> str:
+        """
+        Returns the underlying device (cuda or cpu) for the tensors this
+        distribution can work with.
+        """
+        return self._device
 
     @property
     def parameters(self) -> Iterator[torch.nn.Parameter]:
@@ -66,12 +79,12 @@ class Distribution:
         numel = self.event_shape.numel()
         if numel == 1:
             samples = self.sample(torch.Size([count]))
-            samples = samples.detach().cpu().flatten().numpy()
+            samples = samples.cpu().flatten().numpy()
             pyplot.hist(samples, bins=60, density=True)
             pyplot.show()
         elif numel == 2:
             samples = self.sample(torch.Size([count]))
-            samples = samples.detach().cpu().reshape((-1, 2)).numpy()
+            samples = samples.cpu().reshape((-1, 2)).numpy()
             pyplot.hist2d(samples[:, 0], samples[:, 1],
                           bins=[60, 60], density=True)
             pyplot.show()
