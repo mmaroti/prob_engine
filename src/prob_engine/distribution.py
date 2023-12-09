@@ -70,23 +70,57 @@ class Distribution:
         """
         raise NotImplemented()
 
-    def plot_sample_histogram(self, count=100000):
+    def plot_sample_histogram(self,
+                              bins: int = 60,
+                              count: int = 100000):
         """
         Takes count many samples from the distribution and plots the resulting
-        histogram. This method assume that the dimension of the distribution
+        histogram. This method assumes that the dimension of the distribution
         is one or two.
         """
         numel = self.event_shape.numel()
         if numel == 1:
-            samples = self.sample(torch.Size([count]))
-            samples = samples.cpu().flatten().numpy()
-            pyplot.hist(samples, bins=60, density=True)
+            sample = self.sample(torch.Size([count]))
+            sample = sample.cpu().flatten().numpy()
+            pyplot.hist(sample, bins=bins, density=True)
             pyplot.show()
         elif numel == 2:
-            samples = self.sample(torch.Size([count]))
-            samples = samples.cpu().reshape((-1, 2)).numpy()
-            pyplot.hist2d(samples[:, 0], samples[:, 1],
-                          bins=[60, 60], density=True)
+            sample = self.sample(torch.Size([count]))
+            sample = sample.cpu().reshape((-1, 2)).numpy()
+            pyplot.hist2d(sample[:, 0], sample[:, 1],
+                          bins=bins, density=True)
+            pyplot.colorbar()
             pyplot.show()
         else:
-            raise ValueError("invalid sample size")
+            raise ValueError("invalid event size")
+
+    def plot_probability_density(self,
+                                 min_bound: float = -1.0,
+                                 max_bound: float = 1.0,
+                                 bins=600):
+        """
+        Creates a grid of sample points and plots the corresponding probability
+        density values. This method assumes that the dimension of the
+        distribution is one or two.
+        """
+        numel = self.event_shape.numel()
+        if numel == 1:
+            width = (max_bound - min_bound) / bins
+            sample = torch.linspace(
+                min_bound + 0.5 * width,
+                max_bound - 0.5 * width,
+                bins,
+                dtype=torch.float32,
+                device=self._device).view(
+                    torch.Size((bins,)) + self._sample_shape)
+            prob = torch.exp(self.log_prob(sample))
+            pyplot.bar(
+                x=sample.cpu().flatten().numpy(),
+                height=prob.cpu().flatten().numpy(),
+                width=width)
+            pyplot.show()
+        elif numel == 2:
+            width = (max_bound - min_bound) / bins
+
+        else:
+            raise ValueError("invalid event size")
