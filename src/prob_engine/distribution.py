@@ -80,15 +80,16 @@ class Distribution:
         """
         numel = self.event_shape.numel()
         if numel == 1:
-            sample = self.sample(torch.Size([count]))
+            sample = self.sample(torch.Size((count, )))
             sample = sample.cpu().flatten().numpy()
             pyplot.hist(sample, bins=bins, density=True)
             pyplot.show()
         elif numel == 2:
-            sample = self.sample(torch.Size([count]))
+            sample = self.sample(torch.Size((count, )))
             sample = sample.cpu().reshape((-1, 2)).numpy()
             pyplot.hist2d(sample[:, 0], sample[:, 1],
-                          bins=bins, density=True)
+                          bins=bins, density=True,
+                          rasterized=True)
             pyplot.colorbar()
             pyplot.show()
         else:
@@ -97,7 +98,7 @@ class Distribution:
     def plot_probability_density(self,
                                  min_bound: float = -1.0,
                                  max_bound: float = 1.0,
-                                 bins=600):
+                                 bins: int = 60):
         """
         Creates a grid of sample points and plots the corresponding probability
         density values. This method assumes that the dimension of the
@@ -111,8 +112,8 @@ class Distribution:
                 max_bound - 0.5 * width,
                 bins,
                 dtype=torch.float32,
-                device=self._device).view(
-                    torch.Size((bins,)) + self._sample_shape)
+                device=self._device)
+            sample = sample.view(torch.Size((bins,)) + self._sample_shape)
             prob = torch.exp(self.log_prob(sample))
             pyplot.bar(
                 x=sample.cpu().flatten().numpy(),
@@ -121,6 +122,22 @@ class Distribution:
             pyplot.show()
         elif numel == 2:
             width = (max_bound - min_bound) / bins
-
+            sample1 = torch.linspace(
+                min_bound + 0.5 * width,
+                max_bound - 0.5 * width,
+                bins,
+                dtype=torch.float32,
+                device=self._device)
+            sample2 = torch.meshgrid((sample1, sample1), indexing="xy")
+            sample2 = torch.stack(sample2, dim=-1).view(
+                torch.Size((bins, bins)) + self._sample_shape)
+            prob2 = torch.exp(self.log_prob(sample2))
+            pyplot.pcolormesh(
+                sample1.cpu().numpy(),
+                sample1.cpu().numpy(),
+                prob2.cpu().numpy(),
+                rasterized=True)
+            pyplot.colorbar()
+            pyplot.show()
         else:
             raise ValueError("invalid event size")

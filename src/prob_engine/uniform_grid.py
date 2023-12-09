@@ -141,10 +141,7 @@ def test():
 
     if True:
         grid = UniformGrid(
-            torch.tensor([-1.0, 1.0]),
-            torch.tensor(4))
-        # grid = UniformGrid(
-        #    torch.tensor([[-1.0], [1.0]]),
-        #    torch.tensor([4]))
+            torch.tensor([[-1.0, -1.0], [1.0, 1.0]]),
+            torch.tensor([5, 5]))
         grid.plot_probability_density()
         grid.plot_sample_histogram()
