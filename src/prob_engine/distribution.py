@@ -13,6 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import numpy
 from matplotlib import pyplot
 import torch
 from typing import Iterator, Optional
@@ -70,13 +71,13 @@ class Distribution:
         """
         raise NotImplemented()
 
-    def plot_sample_histogram(self,
-                              bins: int = 60,
-                              count: int = 100000):
+    def plot_sample_density(self,
+                            bins: int = 60,
+                            count: int = 100000):
         """
         Takes count many samples from the distribution and plots the resulting
-        histogram. This method assumes that the dimension of the distribution
-        is one or two.
+        histogram approximating the probability density of the distribution.
+        This method assumes that the dimension of the distribution is one or two.
         """
         numel = self.event_shape.numel()
         if numel == 1:
@@ -95,14 +96,46 @@ class Distribution:
         else:
             raise ValueError("invalid event size")
 
-    def plot_probability_density(self,
-                                 min_bound: float = -1.0,
-                                 max_bound: float = 1.0,
-                                 bins: int = 60):
+    def plot_sample_cumulative(self,
+                               bins: int = 120,
+                               count: int = 100000):
+        """
+        Takes count many samples from the distribution and plots the resulting
+        cumulative histogram approximating the cumulative distribution function.
+        This method assumes that the dimension of the distribution is one.
+        """
+        numel = self.event_shape.numel()
+        if numel == 1:
+            sample = self.sample(torch.Size((count, )))
+            sample = sample.cpu().flatten().numpy()
+            pyplot.hist(sample, bins=bins, density=True, cumulative=True)
+            pyplot.show()
+        elif numel == 2:
+            sample = self.sample(torch.Size((count, )))
+            sample = sample.cpu().reshape((-1, 2)).numpy()
+            values, xs, ys = numpy.histogram2d(
+                sample[:, 0], sample[:, 1], bins=bins)
+            values = numpy.float32(values)
+            values *= 1.0 / count
+            values = values.cumsum(axis=0).cumsum(axis=1)
+            xs, ys = numpy.meshgrid(xs, ys)
+            pyplot.pcolormesh(
+                xs, ys,
+                numpy.transpose(values),
+                rasterized=True)
+            pyplot.colorbar()
+            pyplot.show()
+        else:
+            raise ValueError("invalid event size")
+
+    def plot_exact_density(self,
+                           min_bound: float = -1.0,
+                           max_bound: float = 1.0,
+                           bins: int = 60):
         """
         Creates a grid of sample points and plots the corresponding probability
-        density values. This method assumes that the dimension of the
-        distribution is one or two.
+        density values as calculated by the log_prob method. This method assumes
+        that the dimension of the distribution is one or two.
         """
         numel = self.event_shape.numel()
         if numel == 1:
