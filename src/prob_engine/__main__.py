@@ -22,6 +22,12 @@ def cli():
 
 
 @cli.command()
-def test():
+def test_uniform():
     from . import uniform_grid
     uniform_grid.test()
+
+
+@cli.command()
+def test_normal():
+    from . import multi_normal
+    multi_normal.test()

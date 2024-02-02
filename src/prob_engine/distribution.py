@@ -30,7 +30,10 @@ class Distribution:
         self._sample_shape = event_shape
 
         if device is None:
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+            device = torch.device(
+                "cuda" if torch.cuda.is_available() else "cpu")
+        else:
+            assert isinstance(device, torch.device)
         self._device = device
 
     @property

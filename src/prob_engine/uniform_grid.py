@@ -144,6 +144,6 @@ def test():
             torch.tensor([[0.0, -1.0], [2.0, 1.0]]),
             torch.tensor([5, 5]))
         # grid = UniformGrid(torch.tensor([0, 2]), torch.tensor(5))
-        # grid.plot_exact_density()
+        grid.plot_exact_density()
         grid.plot_sample_density()
         grid.plot_sample_cumulative()
