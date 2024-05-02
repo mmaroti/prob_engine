@@ -61,8 +61,8 @@ class Distribution:
 
     def sample(self, sample_shape: torch.Size = torch.Size()) -> torch.Tensor:
         """
-        Randomly samples from the distribution batch many times and returns
-        a tensor of shape sample_shape + event_shape.
+        Randomly samples from the distribution possibly multiple times and
+        returns a tensor of shape sample_shape + event_shape.
         """
         raise NotImplemented()
 
@@ -75,6 +75,8 @@ class Distribution:
         raise NotImplemented()
 
     def plot_sample_density(self,
+                            min_bound: float = -1.0,
+                            max_bound: float = 1.0,
                             bins: int = 60,
                             count: int = 100000):
         """
@@ -86,13 +88,19 @@ class Distribution:
         if numel == 1:
             sample = self.sample(torch.Size((count, )))
             sample = sample.cpu().flatten().numpy()
-            pyplot.hist(sample, bins=bins, density=True)
+            pyplot.hist(sample,
+                        bins=bins,
+                        range=(min_bound, max_bound),
+                        density=True)
             pyplot.show()
         elif numel == 2:
             sample = self.sample(torch.Size((count, )))
-            sample = sample.cpu().reshape((-1, 2)).numpy()
+            sample = sample.cpu().reshape((count, 2)).numpy()
             pyplot.hist2d(sample[:, 0], sample[:, 1],
-                          bins=bins, density=True,
+                          bins=bins,
+                          range=((min_bound, max_bound),
+                                 (min_bound, max_bound)),
+                          density=True,
                           rasterized=True)
             pyplot.colorbar()
             pyplot.show()
@@ -100,6 +108,8 @@ class Distribution:
             raise ValueError("invalid event size")
 
     def plot_sample_cumulative(self,
+                               min_bound: float = -1.0,
+                               max_bound: float = 1.0,
                                bins: int = 120,
                                count: int = 100000):
         """
@@ -111,13 +121,20 @@ class Distribution:
         if numel == 1:
             sample = self.sample(torch.Size((count, )))
             sample = sample.cpu().flatten().numpy()
-            pyplot.hist(sample, bins=bins, density=True, cumulative=True)
+            pyplot.hist(sample,
+                        bins=bins,
+                        range=(min_bound, max_bound),
+                        density=True,
+                        cumulative=True)
             pyplot.show()
         elif numel == 2:
             sample = self.sample(torch.Size((count, )))
-            sample = sample.cpu().reshape((-1, 2)).numpy()
+            sample = sample.cpu().reshape((count, 2)).numpy()
             values, xs, ys = numpy.histogram2d(
-                sample[:, 0], sample[:, 1], bins=bins)
+                sample[:, 0], sample[:, 1],
+                bins=bins,
+                range=((min_bound, max_bound),
+                       (min_bound, max_bound)))
             values = numpy.float32(values)
             values *= 1.0 / count
             values = values.cumsum(axis=0).cumsum(axis=1)

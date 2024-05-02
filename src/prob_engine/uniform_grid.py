@@ -141,9 +141,10 @@ def test():
 
     if True:
         grid = UniformGrid(
-            torch.tensor([[0.0, -1.0], [2.0, 1.0]]),
-            torch.tensor([5, 5]))
-        # grid = UniformGrid(torch.tensor([0, 2]), torch.tensor(5))
+            torch.tensor([[-1.0, -1.0], [1.0, 1.0]]),
+            torch.tensor([2, 2]))
+        grid._parameter[0, 0] = 0.0
+        # grid = UniformGrid(torch.tensor([-1, 1]), torch.tensor(5))
         grid.plot_exact_density()
         grid.plot_sample_density()
         grid.plot_sample_cumulative()
