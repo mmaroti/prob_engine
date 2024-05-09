@@ -15,7 +15,7 @@
 
 import math
 import torch
-from typing import Iterator, List, Optional
+from typing import Iterator, Optional
 
 from .distribution import Distribution
 
@@ -24,6 +24,7 @@ class PosLinearLayer(torch.nn.Module):
     def __init__(self, size_in: int, size_out: int, device=None):
         super().__init__()
 
+        assert size_in > 0 and size_out > 0
         self.size_in = size_in
         self.size_out = size_out
 
@@ -48,47 +49,82 @@ class MinMaxLayer(torch.nn.Module):
     def __init__(self):
         super().__init__()
 
-    def forward(self, x):
-        assert x.shape[-1] % 2 == 0
-        half = x.shape[-1] // 2
-        a = torch.narrow(x, dim=-1, start=0, length=half)
-        b = torch.narrow(x, dim=-1, start=half, length=half)
-        c = torch.minimum(a, b)
-        d = torch.maximum(a, b)
-        e = torch.cat((c, d), dim=-1)
-        assert e.shape == x.shape
-        return e
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        assert input.shape[-1] % 2 == 0
+        half = input.shape[-1] // 2
+        input1 = torch.narrow(input, dim=-1, start=0, length=half)
+        input2 = torch.narrow(input, dim=-1, start=half, length=half)
+        minimum = torch.minimum(input1, input2)
+        maximum = torch.maximum(input1, input2)
+        output = torch.cat((minimum, maximum), dim=-1)
+        assert output.shape == input.shape
+        return output
 
 
 class Relu2Layer(torch.nn.Module):
     def __init__(self):
         super().__init__()
 
-    def forward(self, x):
-        a = torch.relu(x)
-        b = -torch.relu(-x)
-        c = torch.cat((a, b), dim=-1)
-        return c
+    def forward(self, input):
+        positive = torch.relu(input)
+        negative = -torch.relu(-input)
+        output = torch.cat((positive, negative), dim=-1)
+        return output
+
+
+class ExponentialLayer(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        return torch.exp(input)
+
+
+class NormalizerLayer(torch.nn.Module):
+    def __init__(self, child: torch.nn.Module):
+        super().__init__()
+        self.child = child
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        assert torch.all(-1.0 <= input) and torch.all(input <= 1.0)
+
+        base = torch.full((input.shape[-1], ), fill_value=-1.0,
+                          device=input.device, dtype=input.dtype)
+
+        value0 = self.child(base)
+        value1 = self.child(torch.ones_like(base))
+        value2 = self.child(input)
+        output = (value2 - value0) / (value1 - value0)
+        assert output.shape == value2.shape
+        return output
 
 
 class NeuralNet(Distribution):
-    def __init__(self,
-                 layers: List[torch.nn.Module],
-                 bounds: torch.Tensor,
-                 device: Optional[str] = None):
-        assert bounds.ndim == 2 and bounds.shape[0] == 2
+    def __init__(self, device: Optional[str] = None):
+        super().__init__(event_shape=torch.Size([1]), device=device)
 
-        Distribution.__init__(self, bounds.shape[1:], device=device)
-        self._bounds = bounds.to(dtype=torch.float32, device=self._device)
-
-    @property
-    def bounds(self) -> torch.Tensor:
-        return self._bounds
+        self.model = NormalizerLayer(torch.nn.Sequential(
+            PosLinearLayer(1, 4),
+            MinMaxLayer(),
+            PosLinearLayer(4, 1),
+            ExponentialLayer(),
+        ))
 
     @property
-    def min_bounds(self) -> torch.Tensor:
-        return self._bounds[0]
+    def parameters(self) -> Iterator[torch.nn.Parameter]:
+        return self.model.parameters()
 
-    @property
-    def max_bounds(self) -> torch.Tensor:
-        return self._bounds[1]
+    def get_cdf(self, sample: torch.Tensor) -> torch.Tensor:
+        sample_shape = sample.shape[:len(sample.shape) - len(self.event_shape)]
+        assert sample.shape == sample_shape + self.event_shape
+        sample = sample.to(dtype=torch.float32, device=self._device)
+        sample = sample.reshape(sample_shape + (self.event_numel, ))
+
+        result = self.model.forward(sample).squeeze(-1)
+        assert result.shape == sample_shape
+        return result
+
+
+def test():
+    dist = NeuralNet()
+    dist.plot_exact_cumulative()

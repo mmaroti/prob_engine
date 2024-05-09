@@ -31,3 +31,9 @@ def test_uniform():
 def test_normal():
     from . import multi_normal
     multi_normal.test()
+
+
+@cli.command()
+def test_neural():
+    from . import neaural_net
+    neaural_net.test()

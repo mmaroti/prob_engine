@@ -44,6 +44,14 @@ class Distribution:
         return self._sample_shape
 
     @property
+    def event_numel(self) -> torch.Size:
+        """
+        Returns the dimension of the distribution (or the number of element
+        in a event).
+        """
+        return self._sample_shape.numel()
+
+    @property
     def device(self) -> str:
         """
         Returns the underlying device (cuda or cpu) for the tensors this
@@ -74,6 +82,14 @@ class Distribution:
         """
         raise NotImplemented()
 
+    def get_cdf(self, sample: torch.Tensor) -> torch.Tensor:
+        """
+        Calculates the cumulative distribution function at the given sample.
+        The input is of shape sample_shape + event_shape and the output is of
+        shape sample_shape.
+        """
+        raise NotImplemented()
+
     def plot_sample_density(self,
                             min_bound: float = -1.0,
                             max_bound: float = 1.0,
@@ -84,8 +100,7 @@ class Distribution:
         histogram approximating the probability density of the distribution.
         This method assumes that the dimension of the distribution is one or two.
         """
-        numel = self.event_shape.numel()
-        if numel == 1:
+        if self.event_numel == 1:
             sample = self.sample(torch.Size((count, )))
             sample = sample.cpu().flatten().numpy()
             pyplot.hist(sample,
@@ -93,7 +108,7 @@ class Distribution:
                         range=(min_bound, max_bound),
                         density=True)
             pyplot.show()
-        elif numel == 2:
+        elif self.event_numel == 2:
             sample = self.sample(torch.Size((count, )))
             sample = sample.cpu().reshape((count, 2)).numpy()
             pyplot.hist2d(sample[:, 0], sample[:, 1],
@@ -117,8 +132,7 @@ class Distribution:
         cumulative histogram approximating the cumulative distribution function.
         This method assumes that the dimension of the distribution is one.
         """
-        numel = self.event_shape.numel()
-        if numel == 1:
+        if self.event_numel == 1:
             sample = self.sample(torch.Size((count, )))
             sample = sample.cpu().flatten().numpy()
             pyplot.hist(sample,
@@ -127,7 +141,7 @@ class Distribution:
                         density=True,
                         cumulative=True)
             pyplot.show()
-        elif numel == 2:
+        elif self.event_numel == 2:
             sample = self.sample(torch.Size((count, )))
             sample = sample.cpu().reshape((count, 2)).numpy()
             values, xs, ys = numpy.histogram2d(
@@ -157,8 +171,7 @@ class Distribution:
         density values as calculated by the log_prob method. This method assumes
         that the dimension of the distribution is one or two.
         """
-        numel = self.event_shape.numel()
-        if numel == 1:
+        if self.event_numel == 1:
             width = (max_bound - min_bound) / bins
             sample = torch.linspace(
                 min_bound + 0.5 * width,
@@ -167,13 +180,13 @@ class Distribution:
                 dtype=torch.float32,
                 device=self._device)
             sample = sample.view(torch.Size((bins,)) + self._sample_shape)
-            prob = torch.exp(self.log_prob(sample))
+            value = torch.exp(self.log_prob(sample))
             pyplot.bar(
                 x=sample.cpu().flatten().numpy(),
-                height=prob.cpu().flatten().numpy(),
+                height=value.cpu().flatten().numpy(),
                 width=width)
             pyplot.show()
-        elif numel == 2:
+        elif self.event_numel == 2:
             width = (max_bound - min_bound) / bins
             sample1 = torch.linspace(
                 min_bound + 0.5 * width,
@@ -184,11 +197,57 @@ class Distribution:
             sample2 = torch.meshgrid((sample1, sample1), indexing="xy")
             sample2 = torch.stack(sample2, dim=-1).view(
                 torch.Size((bins, bins)) + self._sample_shape)
-            prob2 = torch.exp(self.log_prob(sample2))
+            value2 = torch.exp(self.log_prob(sample2))
             pyplot.pcolormesh(
                 sample1.cpu().numpy(),
                 sample1.cpu().numpy(),
-                prob2.cpu().numpy(),
+                value2.cpu().numpy(),
+                rasterized=True)
+            pyplot.colorbar()
+            pyplot.show()
+        else:
+            raise ValueError("invalid event size")
+
+    def plot_exact_cumulative(self,
+                              min_bound: float = -1.0,
+                              max_bound: float = 1.0,
+                              bins: int = 120):
+        """
+        Creates a grid of sample points and plots the corresponding cumulative
+        distribution function values as calculated by the get_cdf method. This
+        method assumes that the dimension of the distribution is one or two.
+        """
+        if self.event_numel == 1:
+            width = (max_bound - min_bound) / bins
+            sample = torch.linspace(
+                min_bound + 0.5 * width,
+                max_bound - 0.5 * width,
+                bins,
+                dtype=torch.float32,
+                device=self._device)
+            sample = sample.view(torch.Size((bins,)) + self._sample_shape)
+            value = self.get_cdf(sample).detach()
+            pyplot.bar(
+                x=sample.cpu().flatten().numpy(),
+                height=value.cpu().flatten().numpy(),
+                width=width)
+            pyplot.show()
+        elif self.event_numel == 2:
+            width = (max_bound - min_bound) / bins
+            sample1 = torch.linspace(
+                min_bound + 0.5 * width,
+                max_bound - 0.5 * width,
+                bins,
+                dtype=torch.float32,
+                device=self._device)
+            sample2 = torch.meshgrid((sample1, sample1), indexing="xy")
+            sample2 = torch.stack(sample2, dim=-1).view(
+                torch.Size((bins, bins)) + self._sample_shape)
+            value2 = self.get_cdf(sample2).detach()
+            pyplot.pcolormesh(
+                sample1.cpu().numpy(),
+                sample1.cpu().numpy(),
+                value2.cpu().numpy(),
                 rasterized=True)
             pyplot.colorbar()
             pyplot.show()

@@ -71,7 +71,7 @@ class UniformGrid(Distribution):
             replacement=True)
 
         flat_coords = torch.empty(
-            (sample_shape.numel(), self.event_shape.numel()),
+            (sample_shape.numel(), self.event_numel),
             dtype=torch.long, device=self._device)
 
         for i, d in enumerate(reversed(self._parameter.shape)):
@@ -91,7 +91,7 @@ class UniformGrid(Distribution):
 
         sample = sample.to(dtype=torch.float32, device=self._device)
         flat_sample = sample.view(torch.Size(
-            [sample_shape.numel(), self.event_shape.numel()]))
+            [sample_shape.numel(), self.event_numel]))
 
         flat_coords = ((flat_sample - self.min_bounds) /
                        self._cell_size).floor().long()
