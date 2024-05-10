@@ -99,14 +99,18 @@ class NormalizerLayer(torch.nn.Module):
         return output
 
 
-class NeuralNet(Distribution):
+class NeuralDist(Distribution):
     def __init__(self, device: Optional[str] = None):
-        super().__init__(event_shape=torch.Size([1]), device=device)
+        super().__init__(event_shape=torch.Size([]), device=device)
 
         self.model = NormalizerLayer(torch.nn.Sequential(
-            PosLinearLayer(1, 4),
-            MinMaxLayer(),
-            PosLinearLayer(4, 1),
+            PosLinearLayer(1, 50),
+            # MinMaxLayer(),
+            Relu2Layer(),
+            PosLinearLayer(100, 50),
+            # MinMaxLayer(),
+            Relu2Layer(),
+            PosLinearLayer(100, 1),
             ExponentialLayer(),
         ))
 
@@ -126,5 +130,22 @@ class NeuralNet(Distribution):
 
 
 def test():
-    dist = NeuralNet()
-    dist.plot_exact_cumulative()
+    input = torch.linspace(0.0, 1.0, 101, dtype=torch.float32)
+    expected = torch.sqrt(input)
+
+    model = NeuralDist()
+    optim = torch.optim.Adam(model.parameters, lr=1e-3)
+    loss = torch.nn.MSELoss()
+
+    for step in range(10001):
+        optim.zero_grad()
+
+        output = model.get_cdf(input)
+        error = loss(output, expected)
+        if step % 1000 == 0:
+            print(step, error.detach().cpu().item())
+
+        error.backward()
+        optim.step()
+
+    model.plot_exact_cumulative()

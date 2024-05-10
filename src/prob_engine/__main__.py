@@ -35,5 +35,5 @@ def test_normal():
 
 @cli.command()
 def test_neural():
-    from . import neaural_net
-    neaural_net.test()
+    from . import neaural_dist
+    neaural_dist.test()
