@@ -10,7 +10,7 @@ classifiers = [
   "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
 ]
 dynamic = ["version"]
-dependencies = ["torch", "click"]
+dependencies = ["torch", "click", "numpy", "matplotlib"]
 
 [project.scripts]
 prob_engine = "prob_engine:__main__.cli"

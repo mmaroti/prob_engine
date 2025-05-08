@@ -128,8 +128,8 @@ def test():
         grid = UniformGrid(torch.tensor(
             [[[-1.0, -1.0], [-1.0, -1.0]], [[1.0, 1.0], [1.0, 1.0]]]),
             torch.tensor([[2, 3], [4, 5]]))
-        grid.sample(torch.Size([3, 2]))
-        # grid.sample()
+        print(grid.sample(torch.Size([3, 2])))
+        print(grid.sample())
 
     if False:
         grid = UniformGrid(torch.tensor(
@@ -143,8 +143,9 @@ def test():
         grid = UniformGrid(
             torch.tensor([[-1.0, -1.0], [1.0, 1.0]]),
             torch.tensor([2, 2]))
-        grid._parameter[0, 0] = 0.0
+        print(grid.event_shape)
         # grid = UniformGrid(torch.tensor([-1, 1]), torch.tensor(5))
         grid.plot_exact_density()
+        # grid.plot_exact_cumulative()
         grid.plot_sample_density()
         grid.plot_sample_cumulative()
