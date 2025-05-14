@@ -13,10 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import numpy
-from matplotlib import pyplot
 import torch
-from typing import Iterator, Optional
 
 def get_sample_cdf(event_shape: torch.Size, fixed_sample: torch.Tensor, sample: torch.Tensor) -> torch.Tensor:
         """
