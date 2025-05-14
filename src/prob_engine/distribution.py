@@ -17,6 +17,7 @@ import numpy
 from matplotlib import pyplot
 import torch
 from typing import Iterator, Optional
+from .ecdf import get_sample_cdf
 
 
 class Distribution:
@@ -81,6 +82,14 @@ class Distribution:
         the output is of shape sample_shape.
         """
         raise NotImplemented()
+    
+    def get_pdf(self, sample: torch.Tensor) -> torch.Tensor:
+        """
+        Calculates the density function at the given sample.
+        The input is of shape shample_shape + event_shape and
+        the output is of shape sample_shape.
+        """
+        return torch.exp(self.log_prob(sample))
 
     def get_cdf(self, sample: torch.Tensor) -> torch.Tensor:
         """
@@ -90,6 +99,15 @@ class Distribution:
         """
         raise NotImplemented()
 
+    def get_sample_cdf(self,
+                       n: int,
+                       sample: torch.Tensor) -> torch.Tensor:
+        """
+        Generates 'n' random samples, and uses them to evaluate the empirical distribution function on 'sample'.
+        The input 'sample' is of shape sample_shape + event_shape and the output is of shape sample_shape.
+        """
+        return get_sample_cdf( self.event_shape, self.sample( torch.Size([n]) ), sample )
+    
     def plot_sample_density(self,
                             min_bound: float = -1.0,
                             max_bound: float = 1.0,
