@@ -119,13 +119,13 @@ class NeuralDist(Distribution):
         return self.model.parameters()
 
     def get_cdf(self, sample: torch.Tensor) -> torch.Tensor:
-        sample_shape = sample.shape[:len(sample.shape) - len(self.event_shape)]
-        assert sample.shape == sample_shape + self.event_shape
+        batch_shape = sample.shape[:len(sample.shape) - len(self.event_shape)]
+        assert sample.shape == batch_shape + self.event_shape
         sample = sample.to(dtype=torch.float32, device=self._device)
-        sample = sample.reshape(sample_shape + (self.event_numel, ))
+        sample = sample.reshape(batch_shape + (self.event_numel, ))
 
         result = self.model.forward(sample).squeeze(-1)
-        assert result.shape == sample_shape
+        assert result.shape == batch_shape
         return result
 
 
@@ -148,4 +148,4 @@ def test():
         error.backward()
         optim.step()
 
-    model.plot_exact_cumulative()
+    model.plot_exact_cdf()

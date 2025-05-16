@@ -64,21 +64,21 @@ class UniformGrid(Distribution):
     def parameters(self) -> Iterator[torch.nn.Parameter]:
         yield self._parameter
 
-    def sample(self, sample_shape: torch.Size = torch.Size()) -> torch.Tensor:
+    def sample(self, batch_shape: torch.Size = torch.Size()) -> torch.Tensor:
         flat_indices = torch.multinomial(
             self._parameter.flatten().abs(),
-            sample_shape.numel(),
+            batch_shape.numel(),
             replacement=True)
 
         flat_coords = torch.empty(
-            (sample_shape.numel(), self.event_numel),
+            (batch_shape.numel(), self.event_numel),
             dtype=torch.long, device=self._device)
 
         for i, d in enumerate(reversed(self._parameter.shape)):
             flat_coords[:, -1 - i] = flat_indices % d
             flat_indices //= d
 
-        coords = flat_coords.view(sample_shape + self.event_shape).float()
+        coords = flat_coords.view(batch_shape + self.event_shape).float()
         coords += torch.rand(coords.shape,
                              dtype=torch.float32, device=self._device)
 
@@ -86,12 +86,12 @@ class UniformGrid(Distribution):
         return values
 
     def log_prob(self, sample: torch.Tensor) -> torch.Tensor:
-        sample_shape = sample.shape[:len(sample.shape) - len(self.event_shape)]
-        assert sample.shape == sample_shape + self.event_shape
+        batch_shape = sample.shape[:len(sample.shape) - len(self.event_shape)]
+        assert sample.shape == batch_shape + self.event_shape
 
         sample = sample.to(dtype=torch.float32, device=self._device)
         flat_sample = sample.view(torch.Size(
-            [sample_shape.numel(), self.event_numel]))
+            [batch_shape.numel(), self.event_numel]))
 
         flat_coords = ((flat_sample - self.min_bounds) /
                        self._cell_size).floor().long()
@@ -120,7 +120,7 @@ class UniformGrid(Distribution):
         flat_probs = flat_param[flat_indices]
         flat_probs[flat_invalid] = 0.0
 
-        return torch.log(flat_probs).view(sample_shape)
+        return torch.log(flat_probs).view(batch_shape)
 
 
 def test():
@@ -145,7 +145,7 @@ def test():
             torch.tensor([2, 2]))
         print(grid.event_shape)
         # grid = UniformGrid(torch.tensor([-1, 1]), torch.tensor(5))
-        grid.plot_exact_density()
+        grid.plot_exact_pdf()
         # grid.plot_exact_cumulative()
-        grid.plot_sample_density()
-        grid.plot_sample_cumulative()
+        grid.plot_empirical_pdf()
+        grid.plot_empirical_cdf()

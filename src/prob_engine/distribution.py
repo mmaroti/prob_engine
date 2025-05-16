@@ -1,4 +1,4 @@
-# Copyright (C) 2023, Miklos Maroti
+# Copyright (C) 2023, Miklos Maroti and Daniel Bezdany
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -28,8 +28,9 @@ class Distribution:
         it will be automatically selected between cuda and cpu.
         """
         assert isinstance(event_shape, torch.Size)
-        self._sample_shape = event_shape
+        self._event_shape = event_shape
 
+        # device = torch.device("cpu")
         if device is None:
             device = torch.device(
                 "cuda" if torch.cuda.is_available() else "cpu")
@@ -42,7 +43,7 @@ class Distribution:
         """
         Returns the shape of events that this distribution can produce.
         """
-        return self._sample_shape
+        return self._event_shape
 
     @property
     def event_numel(self) -> torch.Size:
@@ -50,7 +51,7 @@ class Distribution:
         Returns the dimension of the distribution (or the number of element
         in a event).
         """
-        return self._sample_shape.numel()
+        return self._event_shape.numel()
 
     @property
     def device(self) -> str:
@@ -68,51 +69,52 @@ class Distribution:
         if False:
             yield
 
-    def sample(self, sample_shape: torch.Size = torch.Size()) -> torch.Tensor:
+    def sample(self, batch_shape: torch.Size = torch.Size()) -> torch.Tensor:
         """
         Randomly samples from the distribution possibly multiple times and
-        returns a tensor of shape sample_shape + event_shape.
+        returns a tensor of shape batch_shape + event_shape.
         """
         raise NotImplemented()
 
     def log_prob(self, sample: torch.Tensor) -> torch.Tensor:
         """
         Calculates the logarithm of the probability density function at the
-        given sample. The input is of shape sample_shape + event_shape and
-        the output is of shape sample_shape.
+        given sample. The input is of shape batch_shape + event_shape and
+        the output is of shape batch_shape.
         """
         raise NotImplemented()
-    
+
     def get_pdf(self, sample: torch.Tensor) -> torch.Tensor:
         """
         Calculates the density function at the given sample.
-        The input is of shape shample_shape + event_shape and
-        the output is of shape sample_shape.
+        The input is of shape batch_shape + event_shape and
+        the output is of shape batch_shape.
         """
         return torch.exp(self.log_prob(sample))
 
     def get_cdf(self, sample: torch.Tensor) -> torch.Tensor:
         """
         Calculates the cumulative distribution function at the given sample.
-        The input is of shape sample_shape + event_shape and the output is of
-        shape sample_shape.
+        The input is of shape batch_shape + event_shape and the output is of
+        shape batch_shape.
         """
         raise NotImplemented()
 
-    def get_sample_cdf(self,
-                       n: int,
-                       sample: torch.Tensor) -> torch.Tensor:
+    def get_empirical_cdf(self,
+                          count: int,
+                          sample: torch.Tensor) -> torch.Tensor:
         """
-        Generates 'n' random samples, and uses them to evaluate the empirical distribution function on 'sample'.
-        The input 'sample' is of shape sample_shape + event_shape and the output is of shape sample_shape.
+        Generates 'count' many random samples, and uses them to evaluate the
+        empirical distribution function on 'sample'. The input 'sample' is of
+        shape batch_shape + event_shape and the output is of shape batch_shape.
         """
-        return get_sample_cdf( self.event_shape, self.sample( torch.Size([n]) ), sample )
-    
-    def plot_sample_density(self,
-                            min_bound: float = -1.0,
-                            max_bound: float = 1.0,
-                            bins: int = 60,
-                            count: int = 100000):
+        return get_sample_cdf(self.event_shape, self.sample(torch.Size([count])), sample)
+
+    def plot_empirical_pdf(self,
+                           min_bound: float = -1.0,
+                           max_bound: float = 1.0,
+                           bins: int = 60,
+                           count: int = 100000):
         """
         Takes count many samples from the distribution and plots the resulting
         histogram approximating the probability density of the distribution.
@@ -140,11 +142,11 @@ class Distribution:
         else:
             raise ValueError("invalid event size")
 
-    def plot_sample_cumulative(self,
-                               min_bound: float = -1.0,
-                               max_bound: float = 1.0,
-                               bins: int = 120,
-                               count: int = 100000):
+    def plot_empirical_cdf(self,
+                           min_bound: float = -1.0,
+                           max_bound: float = 1.0,
+                           bins: int = 120,
+                           count: int = 100000):
         """
         Takes count many samples from the distribution and plots the resulting
         cumulative histogram approximating the cumulative distribution function.
@@ -180,10 +182,10 @@ class Distribution:
         else:
             raise ValueError("invalid event size")
 
-    def plot_exact_density(self,
-                           min_bound: float = -1.0,
-                           max_bound: float = 1.0,
-                           bins: int = 60):
+    def plot_exact_pdf(self,
+                       min_bound: float = -1.0,
+                       max_bound: float = 1.0,
+                       bins: int = 60):
         """
         Creates a grid of sample points and plots the corresponding probability
         density values as calculated by the log_prob method. This method assumes
@@ -197,7 +199,7 @@ class Distribution:
                 bins,
                 dtype=torch.float32,
                 device=self._device)
-            sample = sample.view(torch.Size((bins,)) + self._sample_shape)
+            sample = sample.view(torch.Size((bins,)) + self._event_shape)
             value = torch.exp(self.log_prob(sample))
             pyplot.bar(
                 x=sample.cpu().flatten().numpy(),
@@ -214,7 +216,7 @@ class Distribution:
                 device=self._device)
             sample2 = torch.meshgrid((sample1, sample1), indexing="xy")
             sample2 = torch.stack(sample2, dim=-1).view(
-                torch.Size((bins, bins)) + self._sample_shape)
+                torch.Size((bins, bins)) + self._event_shape)
             value2 = torch.exp(self.log_prob(sample2))
             pyplot.pcolormesh(
                 sample1.cpu().numpy(),
@@ -226,10 +228,10 @@ class Distribution:
         else:
             raise ValueError("invalid event size")
 
-    def plot_exact_cumulative(self,
-                              min_bound: float = -1.0,
-                              max_bound: float = 1.0,
-                              bins: int = 120):
+    def plot_exact_cdf(self,
+                       min_bound: float = -1.0,
+                       max_bound: float = 1.0,
+                       bins: int = 120):
         """
         Creates a grid of sample points and plots the corresponding cumulative
         distribution function values as calculated by the get_cdf method. This
@@ -243,7 +245,7 @@ class Distribution:
                 bins,
                 dtype=torch.float32,
                 device=self._device)
-            sample = sample.view(torch.Size((bins,)) + self._sample_shape)
+            sample = sample.view(torch.Size((bins,)) + self._event_shape)
             value = self.get_cdf(sample).detach()
             pyplot.bar(
                 x=sample.cpu().flatten().numpy(),
@@ -260,7 +262,7 @@ class Distribution:
                 device=self._device)
             sample2 = torch.meshgrid((sample1, sample1), indexing="xy")
             sample2 = torch.stack(sample2, dim=-1).view(
-                torch.Size((bins, bins)) + self._sample_shape)
+                torch.Size((bins, bins)) + self._event_shape)
             value2 = self.get_cdf(sample2).detach()
             pyplot.pcolormesh(
                 sample1.cpu().numpy(),

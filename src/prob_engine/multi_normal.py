@@ -50,5 +50,5 @@ def test():
         torch.tensor(1.0))
     print(dist.event_shape)
     # dist.plot_exact_density()
-    dist.plot_sample_density()
+    dist.plot_empirical_pdf()
     # dist.plot_sample_cumulative()

@@ -37,3 +37,9 @@ def test_normal():
 def test_neural():
     from . import neural_dist
     neural_dist.test()
+
+
+@cli.command()
+def test_mixture():
+    from . import mixture
+    mixture.test()
