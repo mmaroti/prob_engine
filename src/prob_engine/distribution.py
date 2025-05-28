@@ -17,7 +17,6 @@ import numpy
 from matplotlib import pyplot
 import torch
 from typing import Iterator, Optional
-from .ecdf import get_sample_cdf
 
 
 class Distribution:
@@ -46,7 +45,7 @@ class Distribution:
         return self._event_shape
 
     @property
-    def event_numel(self) -> torch.Size:
+    def event_numel(self) -> int:
         """
         Returns the dimension of the distribution (or the number of element
         in a event).
@@ -108,7 +107,17 @@ class Distribution:
         empirical distribution function on 'sample'. The input 'sample' is of
         shape batch_shape + event_shape and the output is of shape batch_shape.
         """
-        return get_sample_cdf(self.event_shape, self.sample(torch.Size([count])), sample)
+
+        batch_shape = sample.shape[:-len(self.event_shape)]
+        assert sample.shape == batch_shape + self.event_shape
+
+        sample_0 = self.sample(torch.Size((count, ))
+                            ).view(torch.Size((count, self.event_numel)))
+        compared = ( sample_0 
+                    <= sample.view((batch_shape.numel(),self.event_numel)
+                                ).unsqueeze(-2) )
+
+        return compared.all(-1).count_nonzero(-1) / count
 
     def plot_empirical_pdf(self,
                            min_bound: float = -1.0,
@@ -200,7 +209,7 @@ class Distribution:
                 dtype=torch.float32,
                 device=self._device)
             sample = sample.view(torch.Size((bins,)) + self._event_shape)
-            value = torch.exp(self.log_prob(sample))
+            value = self.get_pdf(sample)
             pyplot.bar(
                 x=sample.cpu().flatten().numpy(),
                 height=value.cpu().flatten().numpy(),
@@ -217,7 +226,7 @@ class Distribution:
             sample2 = torch.meshgrid((sample1, sample1), indexing="xy")
             sample2 = torch.stack(sample2, dim=-1).view(
                 torch.Size((bins, bins)) + self._event_shape)
-            value2 = torch.exp(self.log_prob(sample2))
+            value2 = self.get_pdf(sample2)
             pyplot.pcolormesh(
                 sample1.cpu().numpy(),
                 sample1.cpu().numpy(),
