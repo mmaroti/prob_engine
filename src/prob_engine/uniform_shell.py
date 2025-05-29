@@ -121,10 +121,10 @@ class UniformShell(Distribution):
                     return probs.view(batch_shape)/2.0
                 elif (self.radius1 * self.radius2 == 0).all():
                     probs = torch.minimum(
-                            torch.maximum(sample - self.center 
-                                          + self.radius1.flatten().abs()
-                                          + self.radius2.flatten().abs(),
-                                        torch.tensor(0))
+                            (sample - self.center 
+                            + self.radius1.flatten().abs()
+                            + self.radius2.flatten().abs()
+                            ).relu()
                             / self.measure(),
                             torch.tensor(1.0))
                     return probs.view(batch_shape)
@@ -136,16 +136,16 @@ class UniformShell(Distribution):
                                         self.radius1.flatten().abs(),
                                         self.radius2.flatten().abs() )
                     larger = torch.minimum(
-                            torch.maximum(sample.view( 
-                                (batch_shape.numel(),self.event_numel))
+                            (   sample.view(
+                                (batch_shape.numel(), self.event_numel))
                                 - self.center.flatten() 
-                                + large_r, torch.tensor(0) ),
+                                + large_r ).relu(),
                             2*large_r)
                     smaller = torch.minimum(
-                            torch.maximum(sample.view( 
+                            (   sample.view( 
                                 (batch_shape.numel(),self.event_numel))
                                 - self.center.flatten() 
-                                + small_r, torch.tensor(0) ),
+                                + small_r ).relu(),
                             2*small_r)
                     return ( ( larger - smaller) / self.measure()
                             ).view(batch_shape)
@@ -165,9 +165,7 @@ class UniformShell(Distribution):
                         (s-c).pow(2).sum(-1) > rR.pow(2),
                         (s > c).prod(-1) )
                     
-                    corner_coord_diff_rR = torch.maximum(
-                        rR.pow(2) - (c - s).pow(2), 
-                        torch.tensor([0,0]) ).sqrt()
+                    corner_coord_diff_rR = ( rR.pow(2) - (c - s).pow(2)).relu().sqrt()
                     corner_sides_rR = torch.minimum(
                         corner_coord_diff_rR 
                                     + torch.maximum(
@@ -212,9 +210,7 @@ class UniformShell(Distribution):
                         (s-c).pow(2).sum(-1) > r1.pow(2),
                         (s > c).prod(-1) )
                     
-                    corner_coord_diff_r1 = torch.maximum(
-                        r1.pow(2) - (c - s).pow(2), 
-                        torch.tensor([0,0]) ).sqrt()
+                    corner_coord_diff_r1 = (r1.pow(2) - (c - s).pow(2)).relu().sqrt()
                     corner_sides_r1 = torch.minimum(
                         corner_coord_diff_r1 
                                     + torch.maximum(
@@ -246,9 +242,7 @@ class UniformShell(Distribution):
                         (s-c).pow(2).sum(-1) > r2.pow(2),
                         (s > c).prod(-1) )
                     
-                    corner_coord_diff_r2 = torch.maximum(
-                        r2.pow(2) - (c - s).pow(2), 
-                        torch.tensor([0,0]) ).sqrt()
+                    corner_coord_diff_r2 = (r2.pow(2) - (c - s).pow(2)).relu().sqrt()
                     corner_sides_r2 = torch.minimum(
                         corner_coord_diff_r2 
                                     + torch.maximum(
@@ -290,9 +284,7 @@ class UniformShell(Distribution):
                         (s-c).pow(2).sum(-1) > rr.pow(2),
                         (s > c).prod(-1) )
                     
-                    corner_coord_diff_rr = torch.maximum(
-                        rr.pow(2) - (c - s).pow(2), 
-                        torch.tensor([0,0]) ).sqrt()
+                    corner_coord_diff_rr = (rr.pow(2)-(c - s).pow(2)).relu().sqrt()
                     corner_sides_rr = torch.minimum(
                         corner_coord_diff_rr 
                                     + torch.maximum(

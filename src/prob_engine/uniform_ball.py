@@ -90,8 +90,7 @@ class UniformBall(Distribution):
 
             if self.event_numel == 1:
                 probs = torch.minimum(
-                        torch.maximum(sample - self.center + self.radius,
-                                    torch.tensor(0))
+                        (sample - self.center + self.radius).relu()
                         / self.measure(),
                         torch.tensor(1.0))
                 return probs.view(batch_shape)
@@ -109,9 +108,7 @@ class UniformBall(Distribution):
                     (s-c).pow(2).sum(-1) > r.pow(2),
                     (s > c).prod(-1) )
                 
-                corner_coord_diff = torch.maximum(
-                    r.pow(2) - (c - s).pow(2), 
-                    torch.tensor([0,0]) ).sqrt()
+                corner_coord_diff = (r.pow(2)-(c - s).pow(2)).relu().sqrt()
                 corner_sides = torch.minimum(
                     corner_coord_diff 
                                 + torch.maximum(
