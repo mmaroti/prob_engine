@@ -1,4 +1,4 @@
-# Copyright (C) 2023, Miklos Maroti
+# Copyright (C) 2023, Miklos Maroti and Daniel Bezdany
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -85,7 +85,7 @@ class UniformGrid(Distribution):
         values = self.min_bounds + coords * self._cell_size
         return values
 
-    def log_prob(self, sample: torch.Tensor) -> torch.Tensor:
+    def get_pdf(self, sample: torch.Tensor) -> torch.Tensor:
         batch_shape = sample.shape[:len(sample.shape) - len(self.event_shape)]
         assert sample.shape == batch_shape + self.event_shape
 
@@ -120,7 +120,40 @@ class UniformGrid(Distribution):
         flat_probs = flat_param[flat_indices]
         flat_probs[flat_invalid] = 0.0
 
-        return torch.log(flat_probs).view(batch_shape)
+        return flat_probs.view(batch_shape)
+
+    def log_prob(self, sample: torch.Tensor) -> torch.Tensor:
+        batch_shape = sample.shape[:len(sample.shape) - len(self.event_shape)]
+        assert sample.shape == batch_shape + self.event_shape
+
+        return torch.log(self.get_pdf(sample))
+    
+    def get_cdf(self, sample: torch.Tensor) -> torch.Tensor:
+        #TODO: Finish implementation
+        batch_shape = sample.shape[:len(sample.shape) - len(self.event_shape)]
+        assert sample.shape == batch_shape + self.event_shape
+
+        if self.event_numel == 1:
+            flat_sample = sample.view(
+                 torch.Size((batch_shape.numel(), self.event_numel)) )
+            flat_params = self._parameter.flatten().abs()
+            flat_params *= 1.0/( flat_params.sum() )
+            indexes = torch.tensor(list(range(1, flat_params.numel()+1)))
+            flat_coords = ( (flat_sample - self.min_bounds) / self._cell_size
+                 ).floor().relu().long()
+            full_cover = ( (indexes <= flat_coords)
+                           * flat_params ).sum(-1)
+            partial_cover = ( flat_sample - 
+                                (self.min_bounds 
+                                    + flat_coords * self._cell_size.flatten() )
+                            ).relu().flatten() * ( (indexes - 1 == flat_coords) 
+                                 * flat_params).sum(-1) / self._cell_volume
+            return (full_cover + partial_cover).view(batch_shape)
+        elif self.event_numel == 2:
+            raise NotImplemented()
+        else:
+            raise NotImplemented()
+
 
 
 def test():
@@ -140,12 +173,20 @@ def test():
             [[-0.9, 0.1], [0.9, -0.1], [-1.1, 0.0]])))
 
     if True:
-        grid = UniformGrid(
+        grid1 = UniformGrid(
+            torch.tensor([[-0.75],[0.75]]),
+            torch.tensor([4])   )
+        grid1.plot_empirical_pdf()
+        grid1.plot_exact_pdf()
+        grid1.plot_empirical_cdf()
+        grid1.plot_exact_cdf()
+
+        grid2 = UniformGrid(
             torch.tensor([[-1.0, -1.0], [1.0, 1.0]]),
             torch.tensor([2, 2]))
-        print(grid.event_shape)
+        print(grid2.event_shape)
         # grid = UniformGrid(torch.tensor([-1, 1]), torch.tensor(5))
-        grid.plot_exact_pdf()
-        # grid.plot_exact_cumulative()
-        grid.plot_empirical_pdf()
-        grid.plot_empirical_cdf()
+        grid2.plot_exact_pdf()
+        # grid.plot_exact_cdf()
+        grid2.plot_empirical_pdf()
+        grid2.plot_empirical_cdf()
