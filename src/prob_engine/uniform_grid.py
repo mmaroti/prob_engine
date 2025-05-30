@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from typing import Iterator, Optional
+from typing import Callable, Iterator, Optional
 import torch
 
 from .distribution import Distribution
@@ -59,6 +59,20 @@ class UniformGrid(Distribution):
     @property
     def parameters(self) -> Iterator[torch.nn.Parameter]:
         yield self._parameter
+
+    def centers(self) -> torch.Tensor:
+        """
+        Returns all center sample points for all grid cells.
+        """
+        raise NotImplementedError()
+
+    def initialize(self, pdf: Callable[[torch.Tensor], float]):
+        """
+        For each grid cell it calls the given pdf function with
+        the center of that grid cell which in turn returns the 
+        un-normalized pdf value for that sample.
+        """
+        raise NotImplementedError()
 
     def sample(self, batch_shape: torch.Size = torch.Size()) -> torch.Tensor:
         flat_indices = torch.multinomial(
