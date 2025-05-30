@@ -138,7 +138,7 @@ class UniformBall(Distribution):
                 return area.view(batch_shape)/self.measure()
             
             else:
-                raise NotImplemented()
+                raise NotImplementedError()
         
 
 

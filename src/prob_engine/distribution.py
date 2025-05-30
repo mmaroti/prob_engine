@@ -31,8 +31,7 @@ class Distribution:
 
         # device = torch.device("cpu")
         if device is None:
-            device = torch.device(
-                "cuda" if torch.cuda.is_available() else "cpu")
+            device = "cuda" if torch.cuda.is_available() else "cpu"
         else:
             assert isinstance(device, torch.device)
         self._device = device
@@ -73,7 +72,7 @@ class Distribution:
         Randomly samples from the distribution possibly multiple times and
         returns a tensor of shape batch_shape + event_shape.
         """
-        raise NotImplemented()
+        raise NotImplementedError()
 
     def log_prob(self, sample: torch.Tensor) -> torch.Tensor:
         """
@@ -81,7 +80,7 @@ class Distribution:
         given sample. The input is of shape batch_shape + event_shape and
         the output is of shape batch_shape.
         """
-        raise NotImplemented()
+        raise NotImplementedError()
 
     def get_pdf(self, sample: torch.Tensor) -> torch.Tensor:
         """
@@ -97,7 +96,7 @@ class Distribution:
         The input is of shape batch_shape + event_shape and the output is of
         shape batch_shape.
         """
-        raise NotImplemented()
+        raise NotImplementedError()
 
     def get_empirical_cdf(self,
                           count: int,
@@ -111,13 +110,13 @@ class Distribution:
         batch_shape = sample.shape[:-len(self.event_shape)]
         assert sample.shape == batch_shape + self.event_shape
 
-        sample_0 = self.sample(torch.Size((count, ))
-                            ).view(torch.Size((count, self.event_numel)))
-        compared = ( sample_0 
-                    <= sample.view((batch_shape.numel(),self.event_numel)
-                                ).unsqueeze(-2) )
+        points = self.sample(torch.Size((count, ))
+                             ).view(torch.Size((count, 1, self.event_numel)))
+        sample = sample.view((batch_shape.numel(), self.event_numel))
 
-        return compared.all(-1).count_nonzero(-1) / count
+        compared = points <= sample
+        result = compared.all(-1).count_nonzero(0) / count
+        return result.view(batch_shape)
 
     def plot_empirical_pdf(self,
                            min_bound: float = -1.0,
@@ -131,7 +130,7 @@ class Distribution:
         """
         if self.event_numel == 1:
             sample = self.sample(torch.Size((count, )))
-            sample = sample.cpu().flatten().numpy()
+            sample = sample.cpu().flatten().detach().numpy()
             pyplot.hist(sample,
                         bins=bins,
                         range=(min_bound, max_bound),
@@ -139,7 +138,7 @@ class Distribution:
             pyplot.show()
         elif self.event_numel == 2:
             sample = self.sample(torch.Size((count, )))
-            sample = sample.cpu().reshape((count, 2)).numpy()
+            sample = sample.cpu().reshape((count, 2)).detach().numpy()
             pyplot.hist2d(sample[:, 0], sample[:, 1],
                           bins=bins,
                           range=((min_bound, max_bound),
@@ -163,7 +162,7 @@ class Distribution:
         """
         if self.event_numel == 1:
             sample = self.sample(torch.Size((count, )))
-            sample = sample.cpu().flatten().numpy()
+            sample = sample.cpu().flatten().detach().numpy()
             pyplot.hist(sample,
                         bins=bins,
                         range=(min_bound, max_bound),
@@ -172,7 +171,7 @@ class Distribution:
             pyplot.show()
         elif self.event_numel == 2:
             sample = self.sample(torch.Size((count, )))
-            sample = sample.cpu().reshape((count, 2)).numpy()
+            sample = sample.cpu().reshape((count, 2)).detach().numpy()
             values, xs, ys = numpy.histogram2d(
                 sample[:, 0], sample[:, 1],
                 bins=bins,
@@ -212,7 +211,7 @@ class Distribution:
             value = self.get_pdf(sample)
             pyplot.bar(
                 x=sample.cpu().flatten().numpy(),
-                height=value.cpu().flatten().numpy(),
+                height=value.cpu().flatten().detach().numpy(),
                 width=width)
             pyplot.show()
         elif self.event_numel == 2:
@@ -223,14 +222,14 @@ class Distribution:
                 bins,
                 dtype=torch.float32,
                 device=self._device)
-            sample2 = torch.meshgrid((sample1, sample1), indexing="xy")
+            sample2 = torch.meshgrid([sample1, sample1], indexing="xy")
             sample2 = torch.stack(sample2, dim=-1).view(
                 torch.Size((bins, bins)) + self._event_shape)
             value2 = self.get_pdf(sample2)
             pyplot.pcolormesh(
                 sample1.cpu().numpy(),
                 sample1.cpu().numpy(),
-                value2.cpu().numpy(),
+                value2.cpu().detach().numpy(),
                 rasterized=True)
             pyplot.colorbar()
             pyplot.show()
@@ -269,7 +268,7 @@ class Distribution:
                 bins,
                 dtype=torch.float32,
                 device=self._device)
-            sample2 = torch.meshgrid((sample1, sample1), indexing="xy")
+            sample2 = torch.meshgrid([sample1, sample1], indexing="xy")
             sample2 = torch.stack(sample2, dim=-1).view(
                 torch.Size((bins, bins)) + self._event_shape)
             value2 = self.get_cdf(sample2).detach()

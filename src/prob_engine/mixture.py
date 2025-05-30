@@ -23,20 +23,18 @@ from .distribution import Distribution
 class Mixture(Distribution):
     def __init__(self,
                  distributions: list[Distribution],
-                 weights: torch.Tensor,
                  device: Optional[str] = None):
         assert len(distributions) > 0
-        assert len(distributions) == weights.numel()
-        assert (weights == 0).all().logical_not()
-        assert ( torch.tensor(
-                [d.event_shape == distributions[0].event_shape 
-                    for d in distributions]
-                ) ).all()
-    
-        Distribution.__init__(self, distributions[0].event_shape, device=device)
+        assert all(d.event_shape == distributions[0].event_shape
+                   for d in distributions)
+
+        Distribution.__init__(
+            self, distributions[0].event_shape, device=device)
         self._distributions = distributions
-        self._weights = weights.flatten().abs(
-                                ).to(dtype=torch.float32, device=self._device)
+        self._weights = torch.nn.Parameter(torch.rand(
+            size=[len(distributions)],
+            dtype=torch.float32,
+            device=self._device))
 
     @property
     def weights(self) -> torch.Tensor:
@@ -53,44 +51,42 @@ class Mixture(Distribution):
             yield from d.parameters
 
     def sample(self, batch_shape: torch.Size = torch.Size()) -> torch.Tensor:
+        norm_weights = self._weights.abs()
+        norm_weights /= norm_weights.sum()
         counts = numpy.random.multinomial(
             batch_shape.numel(),
-            self.weights.flatten().abs()/self.weights.abs().sum() )
+            norm_weights.numpy())
         assert counts.sum() == batch_shape.numel()
         samples = torch.cat(
-            [d.sample(torch.Size((counts[i], ))) 
-             for i, d in enumerate(self.distributions)],
-            dim = 0)
+            [d.sample(torch.Size((c, )))
+             for c, d in zip(counts, self._distributions)],
+            dim=0)
         assert samples.shape[0] == batch_shape.numel()
         perm = torch.randperm(batch_shape.numel())
         return samples[perm].view(batch_shape + self.event_shape)
-
 
     def get_pdf(self, sample: torch.Tensor) -> torch.Tensor:
         batch_shape = sample.shape[: - len(self.event_shape)]
         assert sample.shape == batch_shape + self.event_shape
 
-        norm_weights = self.weights.flatten().abs()/self.weights.abs().sum()
-        return torch.stack( 
-            [w * d.get_pdf(sample) 
-             for w, d in zip(norm_weights, self.distributions)
-             ], dim = 0 ).sum(dim = 0)
+        norm_weights = self._weights.abs()
+        norm_weights /= norm_weights.sum()
+        result = torch.stack([d.get_pdf(sample)
+                             for d in self._distributions], dim=-1)
+        return (result * norm_weights).sum(-1)
 
     def log_prob(self, sample: torch.Tensor) -> torch.Tensor:
-        batch_shape = sample.shape[:len(sample.shape) - len(self.event_shape)]
-        assert sample.shape == batch_shape + self.event_shape
-
         return torch.log(self.get_pdf(sample))
 
     def get_cdf(self, sample: torch.Tensor) -> torch.Tensor:
-        batch_shape = sample.shape[:len(sample.shape) - len(self.event_shape)]
+        batch_shape = sample.shape[: - len(self.event_shape)]
         assert sample.shape == batch_shape + self.event_shape
 
-        norm_weights = self.weights.flatten().abs()/self.weights.abs().sum()
-        return torch.stack( 
-            [w * d.get_cdf(sample) 
-             for w, d in zip(norm_weights, self.distributions)
-             ], dim = 0 ).sum(dim = 0)
+        norm_weights = self._weights.abs()
+        norm_weights /= norm_weights.sum()
+        result = torch.stack([d.get_cdf(sample)
+                             for d in self._distributions], dim=-1)
+        return (result * norm_weights).sum(-1)
 
 
 def test():
@@ -106,8 +102,8 @@ def test():
                     [[-0.5, -0.5], [0.0, 0.0]]), torch.tensor([1, 1])),
                 UniformGrid(torch.tensor(
                     [[0.0, 0.0], [0.5, 1.0]]), torch.tensor([1, 1]))
-            ], torch.tensor([0.2, 0.8]))
-        ], torch.tensor([0.2, 0.3, 0.5])
+            ])
+        ]
     )
 
     print("Event shape", dist.event_shape)

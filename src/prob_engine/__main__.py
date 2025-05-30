@@ -43,3 +43,19 @@ def test_neural():
 def test_mixture():
     from . import mixture
     mixture.test()
+
+
+@cli.command()
+def test_empcdf():
+    import torch
+    from .uniform_grid import UniformGrid
+    grid = UniformGrid(
+        torch.tensor([[[-1.0, -1.0], [-1.0, -1.0]], [[1.0, 1.0], [1.0, 1.0]]]),
+        torch.tensor([[3, 3], [3, 3]]))
+
+    points = grid.sample(torch.Size((3, 5)))
+    print(points.shape)
+
+    values = grid.get_empirical_cdf(100, points)
+    print(values.shape)
+

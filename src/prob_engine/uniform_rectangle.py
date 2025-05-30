@@ -75,7 +75,7 @@ class UniformRectangle(Distribution):
         else:
             """ Even if the rectangle is lower dimensional,
             i.e., a[i]=b[i] for some i, the CDF can be defined."""
-            raise NotImplemented()
+            raise NotImplementedError()
 
 def test():
     dist1 = UniformRectangle( torch.tensor([[-0.5], [0.5]]) )
