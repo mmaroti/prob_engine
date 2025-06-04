@@ -64,7 +64,11 @@ class UniformGrid(Distribution):
         """
         Returns all center sample points for all grid cells.
         """
-        raise NotImplementedError()
+        ranges = [torch.tensor(list(range(0,i))) for i in self.counts.flatten()]
+        coords = torch.cartesian_prod( *ranges )
+        centers = (self.bounds[0].flatten() 
+                   + ( coords + 0.5 ) * self._cell_size.flatten())
+        return centers.reshape(self._parameter.shape + self.event_shape)
 
     def initialize(self, pdf: Callable[[torch.Tensor], float]):
         """
@@ -143,26 +147,23 @@ class UniformGrid(Distribution):
         batch_shape = sample.shape[:len(sample.shape) - len(self.event_shape)]
         assert sample.shape == batch_shape + self.event_shape
 
-        if self.event_numel == 1:
-            flat_sample = sample.view(
-                torch.Size((batch_shape.numel(), self.event_numel)))
-            flat_params = self._parameter.flatten().abs()
-            flat_params *= 1.0/(flat_params.sum())
-            indexes = torch.tensor(list(range(1, flat_params.numel()+1)))
-            flat_coords = ((flat_sample - self.min_bounds) / self._cell_size
-                           ).floor().relu().long()
-            full_cover = ((indexes <= flat_coords)
-                          * flat_params).sum(-1)
-            partial_cover = (flat_sample -
-                             (self.min_bounds
-                              + flat_coords * self._cell_size.flatten())
-                             ).relu().flatten() * ((indexes - 1 == flat_coords)
-                                                   * flat_params).sum(-1) / self._cell_volume
-            return (full_cover + partial_cover).view(batch_shape)
-        elif self.event_numel == 2:
-            raise NotImplementedError()
-        else:
-            raise NotImplementedError()
+        flat_sample = sample.view( (batch_shape.numel(), self.event_numel) )
+
+        flat_params = self._parameter.flatten().abs()
+        flat_params *= 1.0/(flat_params.sum())
+
+        flat_centers = self.centers().view(
+             (flat_params.numel(), self.event_numel) )
+        cell_lower_corners = flat_centers - self._cell_size.flatten()/2
+
+        excess = (flat_sample.unsqueeze(1) - cell_lower_corners).relu()
+        volume = torch.minimum(excess, 
+                               self._cell_size.view( 
+                                   (0,self.event_numel) 
+                                   ) ).prod(-1)
+        prob = (volume / self._cell_volume) * flat_params
+
+        return prob.sum(-1).reshape(batch_shape)
 
 
 def test():
@@ -194,8 +195,7 @@ def test():
             torch.tensor([[-1.0, -1.0], [1.0, 1.0]]),
             torch.tensor([2, 2]))
         print(grid2.event_shape)
-        # grid = UniformGrid(torch.tensor([-1, 1]), torch.tensor(5))
-        grid2.plot_exact_pdf()
-        # grid.plot_exact_cdf()
         grid2.plot_empirical_pdf()
+        grid2.plot_exact_pdf()
         grid2.plot_empirical_cdf()
+        grid2.plot_exact_cdf()
