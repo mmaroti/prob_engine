@@ -76,7 +76,11 @@ class UniformGrid(Distribution):
         the center of that grid cell which in turn returns the 
         un-normalized pdf value for that sample.
         """
-        raise NotImplementedError()
+        centers = self.centers()
+        centers = centers.reshape( (self._parameter.numel(), ) + self.event_shape)
+        self._parameter = torch.stack(
+            [pdf(t) for t in centers],
+            -1  ).reshape(self._parameter.shape)
 
     def sample(self, batch_shape: torch.Size = torch.Size()) -> torch.Tensor:
         flat_indices = torch.multinomial(
@@ -107,8 +111,8 @@ class UniformGrid(Distribution):
         flat_sample = sample.view(torch.Size(
             [batch_shape.numel(), self.event_numel]))
 
-        flat_coords = ((flat_sample - self.min_bounds) /
-                       self._cell_size).floor().long()
+        flat_coords = ((flat_sample - self.min_bounds.flatten()) /
+                       self._cell_size.flatten()).floor().long()
         flat_counts = self._counts.flatten()
 
         flat_indices = torch.empty(flat_sample.shape[0],
@@ -159,7 +163,7 @@ class UniformGrid(Distribution):
         excess = (flat_sample.unsqueeze(1) - cell_lower_corners).relu()
         volume = torch.minimum(excess, 
                                self._cell_size.view( 
-                                   (0,self.event_numel) 
+                                   (1,self.event_numel) 
                                    ) ).prod(-1)
         prob = (volume / self._cell_volume) * flat_params
 
