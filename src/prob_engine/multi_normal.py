@@ -46,48 +46,57 @@ class MultiNormal(Distribution):
         yield self._sdevs
 
     def sample(self, batch_shape: torch.Size = torch.Size()) -> torch.Tensor:
-        centered = (torch.normal(0.0, 1.0,
+        standard = torch.normal(0.0, 1.0,
                                  size=batch_shape + (self.event_numel, ),
-                                 device=self._device)
-                    * self.sdevs.flatten().abs())
-        return self.means + centered.view(batch_shape + self.event_shape)
+                                 device=self._device
+                                 ).view(batch_shape + self._event_shape)
+        return self._means + standard * self._sdevs.abs().sqrt()
 
     def get_pdf(self, sample: torch.Tensor) -> torch.Tensor:
-        assert self.sdevs.abs().prod() > 0
+        assert (self._sdevs.abs() > 0).all()
         # Could implement as sdev_i=0 meaning that i-th coordinate is fixed
-        batch_shape = sample.shape[:-len(self.event_shape)]
-        assert sample.shape == batch_shape + self.event_shape
-        coeff = (2 * torch.tensor(torch.pi)).pow(-self.event_numel/2.0)
-        det = self.sdevs.abs().flatten().prod()
-        exparg = -0.5 * ((sample.view(batch_shape + (self.event_numel, ))
-                          - self.means.flatten()
-                          ).pow(2) / self.sdevs.abs().flatten()).sum(-1)
-        return coeff * det.pow(-0.5) * torch.exp(exparg)
+        batch_shape = sample.shape[:-len(self._event_shape)]
+        assert sample.shape == batch_shape + self._event_shape
+        sample = sample.view(batch_shape + (self.event_numel, )
+                            ).to(device = self._device)
+
+        coeff = torch.tensor(2 * torch.pi, device = self._device)
+        coeff = coeff.pow(-self.event_numel/2.0)
+        det = self._sdevs.abs().prod()
+        exparg = sample - self._means.flatten()
+        exparg = exparg.pow(2) / self._sdevs.abs().flatten()
+        exparg = -0.5 * exparg.sum(-1)
+        return coeff * det.pow(-0.5) * exparg.exp()
 
     def log_prob(self, sample: torch.Tensor) -> torch.Tensor:
-        assert self.sdevs.abs().prod() > 0
+        assert (self._sdevs.abs() > 0).all()
         # Could implement as sdev_i=0 meaning that i-th coordinate is fixed
-        batch_shape = sample.shape[:-len(self.event_shape)]
-        assert sample.shape == batch_shape + self.event_shape
-        coeff = 2 * torch.tensor(torch.pi)
-        detlog = self.sdevs.abs().flatten().log().sum()
-        exparg = -0.5 * ((sample.view(batch_shape + (self.event_numel, ))
-                          - self.means.flatten()
-                          ).pow(2) / self.sdevs.flatten().abs()).sum(-1)
-        return (- self.event_numel * coeff.log() / 2.0
-                - 0.5 * detlog + exparg)
+        batch_shape = sample.shape[:-len(self._event_shape)]
+        assert sample.shape == batch_shape + self._event_shape
+        sample = sample.to(device = self._device)
+
+        coeff = torch.tensor(2 * torch.pi, device = self._device)
+        detlog = self._sdevs.abs().log().sum()
+        exparg = sample.view(batch_shape + (self.event_numel, )) \
+                    - self._means.flatten()
+        exparg = exparg.pow(2) / self._sdevs.flatten().abs()
+        exparg = -0.5 * exparg.sum(-1)
+        return  - self.event_numel * coeff.log() / 2.0 \
+                - 0.5 * detlog + exparg
 
     def get_cdf(self, sample: torch.Tensor) -> torch.Tensor:
-        assert self.sdevs.abs().prod() > 0
+        assert (self._sdevs.abs() > 0).all()
         # Could implement as sdev_i=0 meaning that i-th coordinate is fixed
-        batch_shape = sample.shape[:-len(self.event_shape)]
-        assert sample.shape == batch_shape + self.event_shape
+        batch_shape = sample.shape[:-len(self._event_shape)]
+        assert sample.shape == batch_shape + self._event_shape
+        sample = sample.to(device = self._device)
+
         if self.event_numel == 1:
-            sq2 = torch.sqrt(torch.tensor(2))
-            arg = ((sample.view(batch_shape + (self.event_numel, ))
-                    - self.means.flatten())
-                   / (self.sdevs.flatten().abs() * sq2))
-            return (0.5 + 0.5 * torch.erf(arg))
+            sq2 = torch.tensor(2, device = self._device).sqrt()
+            arg = sample.view(batch_shape + (self.event_numel, )) \
+                    - self._means.flatten()
+            arg = arg / (self._sdevs.flatten().abs() * sq2)
+            return 0.5 + 0.5 * torch.erf(arg)
         else:
             raise NotImplementedError()
 
@@ -103,7 +112,7 @@ def test():
 
     dist2 = MultiNormal(
         torch.tensor([0.0, 0.0]),
-        0.5*torch.tensor([1.0, 0.3]))
+        0.1*torch.tensor([1.0, 0.3]))
     print("Event shape", dist2.event_shape)
     print("Parameters", list(dist2.parameters))
     dist2.plot_empirical_pdf()

@@ -27,9 +27,12 @@ class Mixture(Distribution):
         assert len(distributions) > 0
         assert all(d.event_shape == distributions[0].event_shape
                    for d in distributions)
+        assert all(d._device == distributions[0]._device
+                   for d in distributions)
 
         Distribution.__init__(
             self, distributions[0].event_shape, device=device)
+        assert distributions[0]._device == self._device
         self._distributions = distributions
         self._weights = torch.nn.Parameter(torch.rand(
             size=[len(distributions)],
@@ -54,20 +57,22 @@ class Mixture(Distribution):
         norm_weights = self._weights.abs()
         norm_weights /= norm_weights.sum()
         counts = numpy.random.multinomial(
-            batch_shape.numel(),
-            norm_weights.numpy())
+            n = batch_shape.numel(),
+            pvals = norm_weights.detach().numpy())
         assert counts.sum() == batch_shape.numel()
         samples = torch.cat(
             [d.sample(torch.Size((c, )))
              for c, d in zip(counts, self._distributions)],
             dim=0)
+        samples = samples.to(device=self._device)
         assert samples.shape[0] == batch_shape.numel()
-        perm = torch.randperm(batch_shape.numel())
-        return samples[perm].view(batch_shape + self.event_shape)
+        perm = torch.randperm(batch_shape.numel(), device = self._device)
+        return samples[perm].view(batch_shape + self._event_shape)
 
     def get_pdf(self, sample: torch.Tensor) -> torch.Tensor:
-        batch_shape = sample.shape[: - len(self.event_shape)]
-        assert sample.shape == batch_shape + self.event_shape
+        batch_shape = sample.shape[: - len(self._event_shape)]
+        assert sample.shape == batch_shape + self._event_shape
+        sample = sample.to(device = self._device)
 
         norm_weights = self._weights.abs()
         norm_weights /= norm_weights.sum()
@@ -79,18 +84,20 @@ class Mixture(Distribution):
         return torch.log(self.get_pdf(sample))
 
     def get_cdf(self, sample: torch.Tensor) -> torch.Tensor:
-        batch_shape = sample.shape[: - len(self.event_shape)]
-        assert sample.shape == batch_shape + self.event_shape
+        batch_shape = sample.shape[: - len(self._event_shape)]
+        assert sample.shape == batch_shape + self._event_shape
+        sample = sample.to(device = self._device)
 
         norm_weights = self._weights.abs()
         norm_weights /= norm_weights.sum()
         result = torch.stack([d.get_cdf(sample)
-                             for d in self._distributions], dim=-1)
+                              for d in self._distributions], dim=-1)
         return (result * norm_weights).sum(-1)
 
 
 def test():
     from .uniform_grid import UniformGrid
+    from .uniform_ball import UniformBall
     dist = Mixture(
         [
             UniformGrid(torch.tensor(
@@ -102,7 +109,10 @@ def test():
                     [[-0.5, -0.5], [0.0, 0.0]]), torch.tensor([1, 1])),
                 UniformGrid(torch.tensor(
                     [[0.0, 0.0], [0.5, 1.0]]), torch.tensor([1, 1]))
-            ])
+            ]),
+            UniformBall(torch.tensor([-0.5,0.5]), torch.tensor(0.4)),
+            UniformBall(torch.tensor([0.35,-0.5]), torch.tensor(0.25)),
+            UniformBall(torch.tensor([0.65,-0.5]), torch.tensor(0.25))
         ]
     )
 

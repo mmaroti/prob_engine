@@ -20,57 +20,61 @@ from .distribution import Distribution
 
 class UniformRectangle(Distribution):
     def __init__(self,
-                 ab: torch.Tensor,
+                 bounds: torch.Tensor,
                  device: Optional[str] = None):
-        assert ab.shape[0] == 2
-        assert ab.dim() > 1
-        assert (ab[0] <= ab[-1]).all()
-        Distribution.__init__(self, ab[0].shape, device=device)
-        self._ab = ab.to(dtype=torch.float32, device=self._device)
+        assert bounds.shape[0] == 2
+        assert bounds.dim() > 1
+        assert (bounds[0] <= bounds[-1]).all()
+        Distribution.__init__(self, bounds[0].shape, device=device)
+        self._bounds = bounds.to(dtype=torch.float32, device=self._device)
 
     @property
-    def ab(self) -> torch.Tensor:
-        return self._ab
+    def bounds(self) -> torch.Tensor:
+        return self._bounds
 
+    @property
+    def min_bounds(self) -> torch.Tensor:
+        return self._bounds[0]
+
+    @property
+    def max_bounds(self) -> torch.Tensor:
+        return self._bounds[-1]
+    
     @property
     def parameters(self) -> Iterator[torch.nn.Parameter]:
-        yield self._ab
+        yield self._bounds
 
     def measure(self) -> torch.Tensor:
-        assert (self.ab[0] <= self.ab[-1]).all()
-        return (self.ab[-1].flatten() - self.ab[0].flatten()).prod()
+        return (self.max_bounds-self.min_bounds).relu().prod()
     
     def sample(self, batch_shape: torch.Size) -> torch.Tensor:
-        return ( torch.rand(batch_shape + self.event_shape) 
-                * (self.ab[-1] - self.ab[0]) + self.ab[0] )
+        rands = torch.rand(batch_shape + self._event_shape, device = self._device) 
+        return rands * (self.max_bounds - self.min_bounds) + self.min_bounds
 
     def get_pdf(self, sample: torch.Tensor) -> torch.Tensor:
-        assert (self.ab[0] < self.ab[-1]).all(), "No density function exists!"
-        batch_shape = sample.shape[:-len(self.event_shape)]
-        assert sample.shape == batch_shape + self.event_shape
-
-        inside = ( ( self.ab[0].flatten()
-                    <= sample.view( batch_shape + (self.event_numel, ) ) ) 
-                  * ( self.ab[-1].flatten()
-                     >= sample.view( batch_shape + (self.event_numel, ) ) )
-                         )
+        assert (self.min_bounds < self.max_bounds).all(), "No density function exists!"
+        batch_shape = sample.shape[:-len(self._event_shape)]
+        assert sample.shape == batch_shape + self._event_shape
+        sample = sample.view(batch_shape + (self.event_numel, )
+                            ).to(device = self._device)
+        inside = torch.logical_and(
+                (self.min_bounds.flatten() <= sample),
+                (self.max_bounds.flatten() >= sample))
         return inside.all(-1)/self.measure()
     
     def log_prob(self, sample: torch.Tensor) -> torch.Tensor:
         return torch.log( self.get_pdf(sample) )
 
     def get_cdf(self, sample: torch.Tensor) -> torch.Tensor:
-        batch_shape = sample.shape[:-len(self.event_shape)]
-        assert sample.shape == batch_shape + self.event_shape
+        batch_shape = sample.shape[:-len(self._event_shape)]
+        assert sample.shape == batch_shape + self._event_shape
+        sample = sample.view(batch_shape + (self.event_numel, )
+                            ).to(device = self._device)
 
-        if (self.ab[0] < self.ab[-1]).all():
-            diffs = torch.maximum(
-                    torch.minimum(
-                            sample.view( batch_shape + (self.event_numel, ) ),
-                            self.ab[-1].flatten()
-                            ) - self.ab[0].flatten(),
-                    torch.zeros(self.event_numel)
-                    )
+        if (self.min_bounds < self.max_bounds).all():
+            diffs = (torch.minimum( sample, self.max_bounds.flatten() )
+                     - self.min_bounds.flatten() ).relu()
+                    
             return diffs.prod(-1).view(batch_shape) / self.measure()
         else:
             """ Even if the rectangle is lower dimensional,

@@ -25,8 +25,8 @@ class UniformShell(Distribution):
                  radius2: torch.Tensor,
                  device: Optional[str] = None):
         
-        assert ( radius1.numel() == 1 and radius2.numel() == 1 )
-        assert ( (radius1 >= 0) * (radius2 >= 0) ).all()
+        assert radius1.numel() == 1 and radius2.numel() == 1
+        assert torch.logical_and( radius1 >= 0, radius2 >= 0 ).all()
         Distribution.__init__(self, center.shape, device=device)
         self._center = center.to(dtype=torch.float32, device=self._device)
         self._radius1 = radius1.flatten().to(dtype=torch.float32, device=self._device)
@@ -52,259 +52,225 @@ class UniformShell(Distribution):
 
     def measure(self) -> torch.Tensor:
         if self.event_numel == 1:
-            return (self.radius2.flatten().abs()
-                     - self.radius1.flatten().abs() ).abs() * 2
+            diff = self._radius2.abs() - self._radius1.abs()
+            return diff.abs() * 2
         elif self.event_numel == 2:
-            return (self.radius1.flatten().pow(2)
-                    -self.radius2.flatten().pow(2)).abs() * torch.pi
+            diff = self._radius2.abs().pow(2) \
+                    - self._radius1.abs().pow(2)
+            return diff.abs() * torch.pi
         elif self.event_numel == 3:
-            return ( (self.radius1.flatten().abs().pow(3) 
-                      - self.radius2.flatten().abs().pow(3)).abs()
-                    * 3 * torch.pi / 4 )        
+            diff = self._radius2.abs().pow(3) \
+                    - self._radius1.abs().pow(3)
+            return diff.abs() * 3 * torch.pi / 4
         else: 
-            return ( ( self.radius1.flatten().abs().pow(self.event_numel) 
-                       - self.radius2.flatten().abs().pow(self.event_numel)  ).abs()
-                    * torch.tensor(torch.pi).pow( self.event_numel/2.0 ) 
-                    / torch.tensor( 1.0 + self.event_numel/2.0 ).lgamma().exp()
-                    )
+            diff = self._radius1.abs().pow(self.event_numel) \
+                    - self._radius2.abs().pow(self.event_numel)
+            c1 = torch.tensor( torch.pi, device=self._device
+                              ).pow(self.event_numel/2.0)
+            c2 = torch.tensor( 1.0 + self.event_numel/2.0,
+                              device=self._device ).lgamma().exp()
+            return diff.abs() * c1 / c2
 
     def sample(self, batch_shape: torch.Size = torch.Size()) -> torch.Tensor:
         directions = torch.normal( 0.0, 1.0,
-                                  size = batch_shape + (self.event_numel, ) )
-        directions /= directions.pow(2).sum(-1).pow(0.5).unsqueeze(-1)
-        rad = ( torch.rand( size = batch_shape )
-                * (self.radius1.abs().pow(self.event_numel) 
-                   - self.radius2.abs().pow(self.event_numel)).abs()
+                                  size = batch_shape + (self.event_numel, ),
+                                  device = self._device )
+        directions /= directions.pow(2).sum(-1).sqrt().unsqueeze(-1)
+        diff = self._radius1.abs().pow(self.event_numel) \
+                   - self._radius2.abs().pow(self.event_numel)
+        rad = torch.rand( size = batch_shape, device=self._device ) \
+                * diff.abs() \
                 + torch.minimum(
-                        self.radius1.abs(),
-                        self.radius2.abs()
+                        self._radius1.abs(),
+                        self._radius2.abs()
                         ).pow(self.event_numel)
-                ).pow(1.0/self.event_numel)
-        return self.center + (directions * rad.unsqueeze(-1)
-                              ).view(batch_shape + self.event_shape)
+        rad = rad.pow(1.0/self.event_numel)
+        return self._center + (directions * rad.unsqueeze(-1)
+                              ).view(batch_shape + self._event_shape)
 
     def get_pdf(self, sample: torch.Tensor) -> torch.Tensor:
         assert (self.measure() >  0).all()
-        
-        batch_shape = sample.shape[:-len(self.event_shape)]
-        assert sample.shape == batch_shape + self.event_shape
-        distance = ( sample.view( batch_shape + (self.event_numel, ) )
-                - self.center.flatten()
-                ).pow(2).sum(-1).pow(0.5)
+        batch_shape = sample.shape[:-len(self._event_shape)]
+        assert sample.shape == batch_shape + self._event_shape
+        sample = sample.view( batch_shape + (self.event_numel, )
+                             ).to(device=self._device)
+        distance = (sample - self._center.flatten()).pow(2).sum(-1).sqrt()
         inside = torch.logical_and(
-                (distance >= torch.minimum(
-                        self.radius1.flatten().abs(),
-                        self.radius2.flatten().abs())),
-                (distance <= torch.maximum(
-                        self.radius1.flatten().abs(), 
-                        self.radius2.flatten().abs())))    
+                    distance >= torch.minimum(
+                            self._radius1.flatten().abs(),
+                            self._radius2.flatten().abs()),
+                    distance <= torch.maximum(
+                            self._radius1.flatten().abs(), 
+                            self._radius2.flatten().abs()))    
         return inside/self.measure()
     
     def log_prob(self, sample: torch.Tensor) -> torch.Tensor:
         return torch.log( self.get_pdf(sample) )
 
     def get_cdf(self, sample: torch.Tensor) -> torch.Tensor:
-        batch_shape = sample.shape[:-len(self.event_shape)]
-        assert sample.shape == batch_shape + self.event_shape
+        batch_shape = sample.shape[:-len(self._event_shape)]
+        assert sample.shape == batch_shape + self._event_shape
+        sample = sample.view( batch_shape + (self.event_numel, )
+                             ).to(device=self._device)
         if torch.logical_and(
-            self.radius1 == 0,
-            self.radius2 == 0).all():
-                return (self.center <= sample).view(
-                    batch_shape + (self.event_numel, ) ).prod(-1)
+            self._radius1 == 0,
+            self._radius2 == 0).all():
+            above = self._center.flatten() <= sample
+            return above.all(-1).view(batch_shape)
         else:
             if self.event_numel == 1:
-                if (self.radius1.abs() == self.radius2.abs()).all():
-                    probs = (
-                        sample >= self.center - self.radius1.flatten().abs()
-                        + sample >= self.center + self.radius1.flatten().abs()
-                    )
+                if (self._radius1.abs() == self._radius2.abs()).all():
+                    common_r = self._radius1.flatten().abs()
+                    probs = sample >= self._center - common_r \
+                            + sample >= self._center + common_r
                     return probs.view(batch_shape)/2.0
-                elif (self.radius1 * self.radius2 == 0).all():
+                elif (self._radius1.flatten() == 0).logical_or(
+                        self._radius2.flatten() == 0).all():
+                    nonz_r = self._radius1.flatten().abs() \
+                                + self._radius2.flatten().abs() 
                     probs = torch.minimum(
-                            (sample - self.center 
-                            + self.radius1.flatten().abs()
-                            + self.radius2.flatten().abs()
-                            ).relu()
-                            / self.measure(),
-                            torch.tensor(1.0))
-                    return probs.view(batch_shape)
+                            (sample - self._center + nonz_r).relu(),
+                            self.measure())
+                    return probs.view(batch_shape)/self.measure()
                 else:
                     large_r = torch.maximum(
-                                        self.radius1.flatten().abs(),
-                                        self.radius2.flatten().abs() )
+                                        self._radius1.flatten().abs(),
+                                        self._radius2.flatten().abs() )
                     small_r = torch.minimum(
-                                        self.radius1.flatten().abs(),
-                                        self.radius2.flatten().abs() )
+                                        self._radius1.flatten().abs(),
+                                        self._radius2.flatten().abs() )
                     larger = torch.minimum(
-                            (   sample.view(
-                                (batch_shape.numel(), self.event_numel))
-                                - self.center.flatten() 
-                                + large_r ).relu(),
-                            2*large_r)
+                                ( sample 
+                                    - self._center.flatten() 
+                                    + large_r ).relu(),
+                                2 * large_r)
                     smaller = torch.minimum(
-                            (   sample.view( 
-                                (batch_shape.numel(),self.event_numel))
-                                - self.center.flatten() 
-                                + small_r ).relu(),
-                            2*small_r)
-                    return ( ( larger - smaller) / self.measure()
-                            ).view(batch_shape)
+                                ( sample
+                                    - self._center.flatten() 
+                                    + small_r ).relu(),
+                                2 * small_r)
+                    diff = larger - smaller
+                    return diff.view(batch_shape) / self.measure()
             elif self.event_numel == 2:
                 if torch.logical_or(
-                        self.radius1 == 0,
-                        self.radius2 == 0 ).all():
-                    """TODO: Improve efficiency, right now everything is
-                    calculated twice, then the unneeded one multiplied by 0,
-                    and the two added together at the end."""
-                    s = sample.view( ( batch_shape.numel(), self.event_numel ) )
-                    c = self.center.flatten()
-                    rR = self.radius1.flatten().abs() + self.radius2.flatten().abs()
+                        self._radius1 == 0,
+                        self._radius2 == 0 ).all():
+                    sam = sample.view( ( batch_shape.numel(), self.event_numel )
+                                ).to(device=self._device)
+                    cen = self._center.flatten()
+                    rad = self._radius1.flatten().abs() + self._radius2.flatten().abs()
                     """If the point is outside the circle in first quadrant,
                     we use a different calculation for the area."""
-                    ext_q1_rR = torch.logical_and(
-                        (s-c).pow(2).sum(-1) > rR.pow(2),
-                        (s > c).prod(-1) )
-                    
-                    corner_coord_diff_rR = ( rR.pow(2) - (c - s).pow(2)).relu().sqrt()
-                    corner_sides_rR = torch.minimum(
-                        corner_coord_diff_rR 
-                                    + torch.maximum(
-                                        torch.minimum(
-                                            (s-c)[:,[1,0]],
-                                            corner_coord_diff_rR),
-                                        -corner_coord_diff_rR),
-                        2*rR  )
-                    corner_tri_rR = corner_sides_rR.prod(-1)/2
-                    corner_chord_rR = torch.minimum(
-                        corner_sides_rR.pow(2).sum(-1).sqrt(),
-                        2*rR )
-                    corner_angle_rR = 2 * ( corner_chord_rR / (2 * rR) ).arcsin()
-                    corner_segm_rR = rR.pow(2) * (
-                        corner_angle_rR - corner_angle_rR.sin() ) / 2
-                    corner_area_rR = corner_tri_rR + corner_segm_rR
+                    c = (sam >= cen + rad).all(-1)
+                    b = torch.logical_and(
+                            (sam > cen).all(-1),
+                            (sam-cen).pow(2).sum(-1) > rad.pow(2)
+                            ).logical_and(c.logical_not())
+                    a = b.logical_or(c).logical_not()
 
-                    complement_angles_rR = 2 * (corner_sides_rR / (2 * rR)).arcsin()
-                    complement_area_rR = (
-                        torch.pi * rR.pow(2) - rR.pow(2) * (
-                            complement_angles_rR 
-                            - complement_angles_rR.sin()
-                            ).sum(-1) / 2
-                        )
-                    area_rR = ( ext_q1_rR.logical_not() * corner_area_rR
-                            + ext_q1_rR * complement_area_rR )
-                    return area_rR.view(batch_shape)/self.measure()
-                elif (self.radius1.abs() != self.radius2.abs()).all():
-                    """TODO: Improve efficiency, right now everything is
-                    calculated twice, then the unneeded one multiplied by 0,
-                    and the two added together at the end."""
-                    s = sample.view( ( batch_shape.numel(), self.event_numel ) )
-                    c = self.center.flatten()
-                    r1 = torch.minimum(
-                        self.radius1.flatten().abs(),
-                        self.radius2.flatten().abs() )
-                    r2 = torch.maximum(
-                        self.radius1.flatten().abs(),
-                        self.radius2.flatten().abs() )
-                    
-                    ext_q1_r1 = torch.logical_and(
-                        (s-c).pow(2).sum(-1) > r1.pow(2),
-                        (s > c).prod(-1) )
-                    
-                    corner_coord_diff_r1 = (r1.pow(2) - (c - s).pow(2)).relu().sqrt()
-                    corner_sides_r1 = torch.minimum(
-                        corner_coord_diff_r1 
-                                    + torch.maximum(
-                                        torch.minimum(
-                                            (s-c)[:,[1,0]],
-                                            corner_coord_diff_r1),
-                                        -corner_coord_diff_r1),
-                        2*r1  )
-                    corner_tri_r1 = corner_sides_r1.prod(-1)/2
-                    corner_chord_r1 = torch.minimum(
-                        corner_sides_r1.pow(2).sum(-1).sqrt(),
-                        2*r1 )
-                    corner_angle_r1 = 2 * ( corner_chord_r1 / (2 * r1) ).arcsin()
-                    corner_segm_r1 = r1.pow(2) * (
-                        corner_angle_r1 - corner_angle_r1.sin() ) / 2
-                    corner_area_r1 = corner_tri_r1 + corner_segm_r1
+                    diffs = ( rad.pow(2)-(cen - sam).pow(2) ).relu().sqrt()
+                    sides = torch.minimum(
+                        diffs + torch.maximum(
+                            torch.minimum( (sam-cen)[:,[1,0]], diffs),
+                            -diffs),  2*rad)
+                    chord_a = torch.minimum( sides[a].pow(2).sum(-1).sqrt(), 2*rad )
+                    angle_a = 2 * ( chord_a / (2* rad) ).arcsin()
+                    area_a = sides[a].prod(-1)/2 + \
+                                rad.pow(2) * ( angle_a - angle_a.sin() ) / 2
+                    angles_b = 2 * (sides[b] / (2 * rad)).arcsin()
+                    area_b = torch.pi - ( angles_b - angles_b.sin()).sum(-1) / 2
+                    area_b = rad.pow(2) * area_b
+                    area = torch.zeros(batch_shape.numel())
+                    area[c] = self.measure()
+                    area[a] = area_a
+                    area[b] = area_b
+                    return area.view(batch_shape)/self.measure()
+                elif (self._radius1.abs() != self._radius2.abs()).all():
+                    sam = sample.view( ( batch_shape.numel(), self.event_numel )
+                                ).to(device=self._device)
+                    cen = self._center.flatten()
+                    rad1 = self._radius1.flatten().abs()
+                    rad2 = self._radius2.flatten().abs()
+                    """If the point is outside the circle in first quadrant,
+                    we use a different calculation for the area."""
+                    c1 = (sam >= cen + rad1).all(-1)
+                    b1 = torch.logical_and(
+                            (sam > cen).all(-1),
+                            (sam - cen).pow(2).sum(-1) > rad1.pow(2)
+                            ).logical_and(c1.logical_not())
+                    a1 = b1.logical_or(c1).logical_not()
 
-                    complement_angles_r1 = 2 * (corner_sides_r1 / (2 * r1)).arcsin()
-                    complement_area_r1 = (
-                        torch.pi * r1.pow(2) - r1.pow(2) * (
-                            complement_angles_r1 
-                            - complement_angles_r1.sin()
-                            ).sum(-1) / 2
-                        )
-                    area_r1 = ( ext_q1_r1.logical_not() * corner_area_r1
-                            + ext_q1_r1 * complement_area_r1 )
+                    diffs1 = ( rad1.pow(2) - (cen - sam).pow(2) ).relu().sqrt()
+                    sides1 = torch.minimum(
+                        diffs1 + torch.maximum(
+                            torch.minimum( (sam-cen)[:,[1,0]], diffs1),
+                            -diffs1),  2*rad1)
+                    chord_a1 = torch.minimum( sides1[a1].pow(2).sum(-1).sqrt(), 2*rad1 )
+                    angle_a1 = 2 * ( chord_a1 / (2* rad1) ).arcsin()
+                    area_a1 = sides1[a1].prod(-1)/2 + \
+                                rad1.pow(2) * ( angle_a1 - angle_a1.sin() ) / 2
+                    angles_b1 = 2 * (sides1[b1] / (2 * rad1)).arcsin()
+                    area_b1 = torch.pi - ( angles_b1 - angles_b1.sin()).sum(-1) / 2
+                    area_b1 = rad1.pow(2) * area_b1
+                    area1 = torch.zeros(batch_shape.numel())
+                    area1[c1] = rad1.pow(2)*torch.pi
+                    area1[a1] = area_a1
+                    area1[b1] = area_b1
 
-                    ext_q1_r2 = torch.logical_and(
-                        (s-c).pow(2).sum(-1) > r2.pow(2),
-                        (s > c).prod(-1) )
-                    
-                    corner_coord_diff_r2 = (r2.pow(2) - (c - s).pow(2)).relu().sqrt()
-                    corner_sides_r2 = torch.minimum(
-                        corner_coord_diff_r2 
-                                    + torch.maximum(
-                                        torch.minimum(
-                                            (s-c)[:,[1,0]],
-                                            corner_coord_diff_r2),
-                                        -corner_coord_diff_r2),
-                        2*r2  )
-                    corner_tri_r2 = corner_sides_r2.prod(-1)/2
-                    corner_chord_r2 = torch.minimum(
-                        corner_sides_r2.pow(2).sum(-1).sqrt(),
-                        2*r2 )
-                    corner_angle_r2 = 2 * ( corner_chord_r2 / (2 * r2) ).arcsin()
-                    corner_segm_r2 = r2.pow(2) * (
-                        corner_angle_r2 - corner_angle_r2.sin() ) / 2
-                    corner_area_r2 = corner_tri_r2 + corner_segm_r2
+                    c2 = (sam >= cen + rad2).all(-1)
+                    b2 = torch.logical_and(
+                            (sam > cen).all(-1).logical_and(c2.logical_not()),
+                            (sam - cen).pow(2).sum(-1) > rad2.pow(2) )
+                    a2 = b2.logical_or(c2).logical_not()
 
-                    complement_angles_r2 = 2 * (corner_sides_r2 / (2 * r2)).arcsin()
-                    complement_area_r2 = (
-                        torch.pi * r2.pow(2) - r2.pow(2) * (
-                            complement_angles_r2 
-                            - complement_angles_r2.sin()
-                            ).sum(-1) / 2
-                        )
-                    area_r2 = ( ext_q1_r2.logical_not() * corner_area_r2
-                            + ext_q1_r2 * complement_area_r2 )
-                    return (area_r2-area_r1).view(batch_shape)/self.measure() 
+                    diffs2 = ( rad2.pow(2) - (cen - sam).pow(2) ).relu().sqrt()
+                    sides2 = torch.minimum(
+                        diffs2 + torch.maximum(
+                            torch.minimum( (sam-cen)[:,[1,0]], diffs2),
+                            -diffs2),  2*rad2)
+                    chord_a2 = torch.minimum( sides2[a2].pow(2).sum(-1).sqrt(), 2*rad2 )
+                    angle_a2 = 2 * ( chord_a2 / (2* rad2) ).arcsin()
+                    area_a2 = sides2[a2].prod(-1)/2 + \
+                                rad2.pow(2) * ( angle_a2 - angle_a2.sin() ) / 2
+                    angles_b2 = 2 * (sides2[b2] / (2 * rad2)).arcsin()
+                    area_b2 = torch.pi - ( angles_b2 - angles_b2.sin()).sum(-1) / 2
+                    area_b2 = rad2.pow(2) * area_b2
+                    area2 = torch.zeros(batch_shape.numel())
+                    area2[c2] = rad2.pow(2)*torch.pi
+                    area2[a2] = area_a2
+                    area2[b2] = area_b2
+                    area = (area1 - area2).abs()
+                    return area.view(batch_shape) / self.measure()
                 else:
                     """The case when the shell is a circle."""
-                    """TODO: Improve efficiency, right now everything is
-                    calculated twice, then the unneeded one multiplied by 0,
-                    and the two added together at the end."""
-                    s = sample.view( ( batch_shape.numel(), self.event_numel ) )
-                    c = self.center.flatten()
-                    rr = self.radius1.flatten().abs()
+                    assert (self._radius1.abs() == self._radius2.abs()).all()
+                    sam = sample.view( ( batch_shape.numel(), self.event_numel )
+                                ).to(device=self._device)
+                    cen = self._center.flatten()
+                    rad = self._radius1.flatten().abs()
                     """If the point is outside the circle in first quadrant,
                     we use a different calculation for the area."""
-                    ext_q1_rr = torch.logical_and(
-                        (s-c).pow(2).sum(-1) > rr.pow(2),
-                        (s > c).prod(-1) )
-                    
-                    corner_coord_diff_rr = (rr.pow(2)-(c - s).pow(2)).relu().sqrt()
-                    corner_sides_rr = torch.minimum(
-                        corner_coord_diff_rr 
-                                    + torch.maximum(
-                                        torch.minimum(
-                                            (s-c)[:,[1,0]],
-                                            corner_coord_diff_rr),
-                                        -corner_coord_diff_rr),
-                        2*rr  )
-                    corner_chord_rr = torch.minimum(
-                        corner_sides_rr.pow(2).sum(-1).sqrt(),
-                        2*rr )
-                    corner_angle_rr = 2 * ( corner_chord_rr / (2 * rr) ).arcsin()
-                    corner_arc_rr = corner_angle_rr
-
-                    complement_angles_rr = 2 * (corner_sides_rr / (2 * rr)).arcsin()
-                    complement_arc_rr = ( 2 * torch.pi
-                                              - complement_angles_rr.sum(-1))
-                    arc_rr = ( ext_q1_rr.logical_not() * corner_arc_rr
-                            + ext_q1_rr * complement_arc_rr )
-                    return arc_rr.view(batch_shape)/(2*torch.pi)
+                    c = (sam >= cen + rad).all(-1)
+                    b = torch.logical_and(
+                            (sam > cen).all(-1),
+                            (sam - cen).pow(2).sum(-1) > rad.pow(2)
+                            ).logical_and(c.logical_not())
+                    a = b.logical_or(c).logical_not()
+                    diffs = ( rad.pow(2)-(cen - sam).pow(2) ).relu().sqrt()
+                    sides = torch.minimum(
+                        diffs + torch.maximum(
+                            torch.minimum( (sam-cen)[:,[1,0]], diffs),
+                            -diffs),  2*rad)
+                    chord_a = torch.minimum( sides[a].pow(2).sum(-1).sqrt(), 2*rad )
+                    angle_a = 2 * ( chord_a / (2* rad) ).arcsin()
+                    arc_a = angle_a
+                    angles_b = 2 * (sides[b] / (2 * rad)).arcsin()
+                    arc_b = 2 * torch.pi - angles_b.sum(-1)
+                    arc = torch.zeros(batch_shape.numel())
+                    arc[c] = 2*torch.pi
+                    arc[a] = arc_a
+                    arc[b] = arc_b
+                    return arc.view(batch_shape)/(2*torch.pi)
                 
 
 

@@ -96,7 +96,7 @@ class UniformGrid(Distribution):
             flat_coords[:, -1 - i] = flat_indices % d
             flat_indices //= d
 
-        coords = flat_coords.view(batch_shape + self.event_shape).float()
+        coords = flat_coords.view(batch_shape + self._event_shape).float()
         coords += torch.rand(coords.shape,
                              dtype=torch.float32, device=self._device)
 
@@ -104,8 +104,8 @@ class UniformGrid(Distribution):
         return values
 
     def get_pdf(self, sample: torch.Tensor) -> torch.Tensor:
-        batch_shape = sample.shape[:len(sample.shape) - len(self.event_shape)]
-        assert sample.shape == batch_shape + self.event_shape
+        batch_shape = sample.shape[:len(sample.shape) - len(self._event_shape)]
+        assert sample.shape == batch_shape + self._event_shape
 
         sample = sample.to(dtype=torch.float32, device=self._device)
         flat_sample = sample.view(torch.Size(
@@ -141,16 +141,12 @@ class UniformGrid(Distribution):
         return flat_probs.view(batch_shape)
 
     def log_prob(self, sample: torch.Tensor) -> torch.Tensor:
-        batch_shape = sample.shape[:len(sample.shape) - len(self.event_shape)]
-        assert sample.shape == batch_shape + self.event_shape
-
         return torch.log(self.get_pdf(sample))
 
     def get_cdf(self, sample: torch.Tensor) -> torch.Tensor:
-        # TODO: Finish implementation
-        batch_shape = sample.shape[:len(sample.shape) - len(self.event_shape)]
-        assert sample.shape == batch_shape + self.event_shape
-
+        batch_shape = sample.shape[:len(sample.shape) - len(self._event_shape)]
+        assert sample.shape == batch_shape + self._event_shape
+        sample = sample.to(dtype=torch.float32, device=self._device)
         flat_sample = sample.view( (batch_shape.numel(), self.event_numel) )
 
         flat_params = self._parameter.flatten().abs()
@@ -166,8 +162,7 @@ class UniformGrid(Distribution):
                                    (1,self.event_numel) 
                                    ) ).prod(-1)
         prob = (volume / self._cell_volume) * flat_params
-
-        return prob.sum(-1).reshape(batch_shape)
+        return prob.sum(-1).view(batch_shape)
 
 
 def test():

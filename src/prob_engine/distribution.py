@@ -107,15 +107,14 @@ class Distribution:
         shape batch_shape + event_shape and the output is of shape batch_shape.
         """
 
-        batch_shape = sample.shape[:-len(self.event_shape)]
-        assert sample.shape == batch_shape + self.event_shape
-
+        batch_shape = sample.shape[:-len(self._event_shape)]
+        assert sample.shape == batch_shape + self._event_shape
+        sample = sample.view((batch_shape.numel(), self.event_numel)
+                             ).to(device = self._device)
         points = self.sample(torch.Size((count, ))
-                             ).view(torch.Size((count, 1, self.event_numel)))
-        sample = sample.view((batch_shape.numel(), self.event_numel))
-
-        compared = points <= sample
-        result = compared.all(-1).count_nonzero(0) / count
+                             ).view(torch.Size((count, 1, self.event_numel))
+                                ).to(device = self._device)
+        result = (points <= sample).all(-1).count_nonzero(0) / count
         return result.view(batch_shape)
 
     def plot_empirical_pdf(self,
