@@ -1,4 +1,4 @@
-# Copyright (C) 2023, Miklos Maroti
+# Copyright (C) 2023, Miklos Maroti and Daniel Bezdany
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -79,6 +79,37 @@ class ExponentialLayer(torch.nn.Module):
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         return torch.exp(input)
 
+class LogarithmLayer(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        assert torch.all(0.0 < input)
+        return torch.log(input)
+
+class ProductLayer(torch.nn.Module):
+    def __init__(self, size_in: int, size_out: int, device=None):
+        super().__init__()
+
+        assert size_in > 0 and size_out > 0
+        self.size_in = size_in
+        self.size_out = size_out
+
+        self.weight = torch.nn.Parameter(
+            torch.empty((size_in, size_out), device=device, dtype=torch.float32))
+        self.bias = torch.nn.Parameter(
+            torch.empty((size_out,), device=device, dtype=torch.float32))
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        torch.nn.init.uniform_(self.weight, -2, 2)
+        torch.nn.init.uniform_(self.bias, 0, 1)
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        assert torch.all(0.0 < input)
+
+        temp = torch.matmul(input.log(), self.weight).exp()
+        return torch.mul(temp, self.bias)
 
 class NormalizerLayer(torch.nn.Module):
     def __init__(self, child: torch.nn.Module):
