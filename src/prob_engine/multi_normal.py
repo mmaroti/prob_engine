@@ -50,7 +50,8 @@ class MultiNormal(Distribution):
                                  size=batch_shape + (self.event_numel, ),
                                  device=self._device
                                  ).view(batch_shape + self._event_shape)
-        return self._means + standard * self._sdevs.abs().sqrt()
+        result = self._means + standard * self._sdevs.abs()
+        return result
 
     def get_pdf(self, sample: torch.Tensor) -> torch.Tensor:
         assert (self._sdevs.abs() > 0).all()
@@ -59,46 +60,55 @@ class MultiNormal(Distribution):
         assert sample.shape == batch_shape + self._event_shape
         sample = sample.view(batch_shape + (self.event_numel, )
                             ).to(device = self._device)
+        flat_means = self._means.flatten()
+        flat_sdevs = self._sdevs.abs().flatten()
 
         coeff = torch.tensor(2 * torch.pi, device = self._device)
         coeff = coeff.pow(-self.event_numel/2.0)
-        det = self._sdevs.abs().prod()
-        exparg = sample - self._means.flatten()
-        exparg = exparg.pow(2) / self._sdevs.abs().flatten()
+        sqrdet = flat_sdevs.prod()
+        exparg = sample - flat_means
+        exparg = exparg.pow(2) / flat_sdevs.pow(2)
         exparg = -0.5 * exparg.sum(-1)
-        return coeff * det.pow(-0.5) * exparg.exp()
+        return coeff * exparg.exp() / sqrdet
 
     def log_prob(self, sample: torch.Tensor) -> torch.Tensor:
         assert (self._sdevs.abs() > 0).all()
         # Could implement as sdev_i=0 meaning that i-th coordinate is fixed
         batch_shape = sample.shape[:-len(self._event_shape)]
         assert sample.shape == batch_shape + self._event_shape
-        sample = sample.to(device = self._device)
+        sample = sample.view(batch_shape + (self.event_numel, )
+                             ).to(device = self._device)
+        flat_means = self._means.flatten()
+        flat_sdevs = self._sdevs.abs().flatten()
 
         coeff = torch.tensor(2 * torch.pi, device = self._device)
-        detlog = self._sdevs.abs().log().sum()
-        exparg = sample.view(batch_shape + (self.event_numel, )) \
-                    - self._means.flatten()
-        exparg = exparg.pow(2) / self._sdevs.flatten().abs()
+        sqrdetlog = flat_sdevs.prod().log()
+        exparg = sample - flat_means
+        exparg = exparg.pow(2) / flat_sdevs.pow(2)
         exparg = -0.5 * exparg.sum(-1)
-        return  - self.event_numel * coeff.log() / 2.0 \
-                - 0.5 * detlog + exparg
+        result = - self.event_numel * coeff.log() / 2.0 \
+                - sqrdetlog + exparg
+        return result
 
     def get_cdf(self, sample: torch.Tensor) -> torch.Tensor:
         assert (self._sdevs.abs() > 0).all()
         # Could implement as sdev_i=0 meaning that i-th coordinate is fixed
         batch_shape = sample.shape[:-len(self._event_shape)]
         assert sample.shape == batch_shape + self._event_shape
-        sample = sample.to(device = self._device)
-
-        if self.event_numel == 1:
-            sq2 = torch.tensor(2, device = self._device).sqrt()
-            arg = sample.view(batch_shape + (self.event_numel, )) \
-                    - self._means.flatten()
-            arg = arg / (self._sdevs.flatten().abs() * sq2)
-            return 0.5 + 0.5 * torch.erf(arg)
-        else:
-            raise NotImplementedError()
+        sample = sample.view(batch_shape + (self.event_numel, )
+                             ).to(device = self._device)
+        flat_means = self._means.flatten()
+        flat_sdevs = self._sdevs.abs().flatten()
+        """
+        Currently, covariance matrix is assumed to be diagonal,
+        which implies that the coordinates are independent.
+        """
+        sq2 = torch.tensor(2, device = self._device).sqrt()
+        arg = sample - flat_means
+        arg = arg / (flat_sdevs * sq2)
+        result = 0.5 + 0.5 * torch.erf(arg)
+        result = result.prod(-1)
+        return result.view(batch_shape)
 
 
 def test():
