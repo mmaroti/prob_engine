@@ -97,6 +97,32 @@ class Distribution:
         shape batch_shape.
         """
         raise NotImplementedError()
+    
+    def get_rectangle_prob(self, sample: torch.Tensor) -> torch.Tensor:
+        """
+        Calculates the exact probability measure of an [a,b) rectangle
+        using the CDF function of the distribution.
+        For each rectangle, evaluates CDF at the 2^(self.event_numel)
+        corners of the rectangle, which then yields the probability.
+        """
+        batch_shape = sample.shape[:-len(self._event_shape) - 1]
+        assert sample.shape == batch_shape + (2,) + self._event_shape
+        sample = sample.view( (batch_shape.numel(), 2, self.event_numel)
+                             ).to(device = self._device)
+        sides = sample[:,1,:] - sample[:,0,:]
+        assert (sides > 0).all()
+        combs01 = torch.bitwise_and(
+            torch.arange(2**self.event_numel, device = self._device).unsqueeze(-1),
+            2**torch.arange(self.event_numel, device = self._device))
+        combs01 = (combs01 > 0).view( (2**self.event_numel, self.event_numel))
+        corners = sample[:,0,:].view(
+            ( batch_shape.numel(), 1, self.event_numel))\
+                + sides.view( (batch_shape.numel(), 1, self.event_numel)) \
+                * combs01
+        result = ( self.get_cdf(corners) * \
+                  (2*(combs01.count_nonzero(-1)%2)-1)
+                  ).sum(-1)
+        return result.view(batch_shape)
 
     def get_empirical_cdf(self,
                           count: int,
@@ -115,6 +141,54 @@ class Distribution:
                              ).view(torch.Size((count, 1, self.event_numel))
                                 ).to(device = self._device)
         result = (points <= sample).all(-1).count_nonzero(0) / count
+        return result.view(batch_shape)
+    
+    def get_empirical_prob_rectangle(self, count: int,
+                                    rectangles: torch.Tensor) -> torch.Tensor:
+        """
+        Generates 'count' many random samples, and uses them to approximate
+        the probability of a randomly sample from the distribution
+        falling into given [a,b) hyper rectangle.
+        """
+        batch_shape = rectangles.shape[:-len(self._event_shape)-1]
+        assert rectangles.shape == batch_shape + (2,) + self._event_shape
+        upper_bounds = rectangles.view((batch_shape.numel(), 2, 1,
+                                               self.event_numel)
+                                             )[:,1,:,:].to(device = self._device)
+        lower_bounds = rectangles.view((batch_shape.numel(), 2, 1,
+                                               self.event_numel)
+                                             )[:,0,:,:].to(device = self._device)
+        points = self.sample(torch.Size((count, ))
+                             ).view(torch.Size((1, count, self.event_numel))
+                                ).to(device = self._device)
+        result = torch.logical_and(
+            points >= lower_bounds,
+            points < upper_bounds
+            ).all(-1).count_nonzero(-1) / count
+        return result.view(batch_shape) 
+    
+    def get_empirical_prob_ball(self, count: int,
+                                    balls: torch.Tensor) -> torch.Tensor:
+        """
+        Generates 'count' many random samples, and uses them to approximate
+        the probability of a randomly sample from the distribution
+        falling into given (open) hyper balls.
+        If self.event_numel=k, balls should be given in [x_1,...,x_k,r] form, where
+        [x_1,...,x_k] correspond to the center, and r corresponds to the radius.
+        """
+        batch_shape = balls.shape[:-1]
+        assert balls.shape == batch_shape + (self.event_numel + 1, )
+        balls = balls.view(( batch_shape.numel(), self.event_numel + 1 ))
+        radius = balls[:, -1].view( (batch_shape.numel(), 1))
+        center = balls[:, :-1]
+        center = center.view((batch_shape.numel(), 1,
+                                               self.event_numel)
+                                             ).to(device = self._device)
+        points = self.sample(torch.Size((count, ))
+                             ).view(torch.Size((1, count, self.event_numel))
+                                ).to(device = self._device)
+        distance = (points - center).pow(2).sum(-1)
+        result = (distance < radius.pow(2)).count_nonzero(-1)/count
         return result.view(batch_shape)
 
     def plot_empirical_pdf(self,

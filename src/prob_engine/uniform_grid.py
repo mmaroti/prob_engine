@@ -62,13 +62,29 @@ class UniformGrid(Distribution):
 
     def centers(self) -> torch.Tensor:
         """
-        Returns all center sample points for all grid cells.
+        Returns center points for all grid cells.
         """
-        ranges = [torch.tensor(list(range(0,i))) for i in self.counts.flatten()]
+        ranges = [torch.arange(start=0, end = i,
+                               device = self._device)
+                               for i in self.counts.flatten()]
         coords = torch.cartesian_prod( *ranges )
         centers = (self.bounds[0].flatten() 
                    + ( coords + 0.5 ) * self._cell_size.flatten())
         return centers.reshape(self._parameter.shape + self.event_shape)
+    
+    def cell_bounds(self) -> torch.Tensor:
+        """
+        Returns pairs of lower and upper bounds for all grid cells.
+        """
+        event_dims = len(self._event_shape)
+        centers = self.centers().unsqueeze(-event_dims-1)
+        half_size = self._cell_size.unsqueeze(-event_dims-1)/2
+        cell_bounds = torch.cat(
+            [centers - half_size, centers + half_size],
+            dim = -event_dims-1)
+        assert cell_bounds.shape == self._parameter.shape \
+                                    + (2,) + self._event_shape
+        return cell_bounds
 
     def initialize(self, pdf: Callable[[torch.Tensor], float]):
         """
@@ -81,6 +97,57 @@ class UniformGrid(Distribution):
         self._parameter = torch.stack(
             [pdf(t) for t in centers],
             -1  ).reshape(self._parameter.shape)
+    
+    def initialize_from_distribution_pdf_center(self, target: Distribution):
+        """
+        Evaluates get_pdf function of target distribution then
+        sets parameters to approximate the result.
+        """
+        assert target._event_shape == self._event_shape
+        centers = self.centers().to(device = target._device)
+        pdf = target.get_pdf(centers).to(device = self._device)
+        self._parameter = pdf.view(self._parameter.shape)
+
+    def initialize_from_distribution_pdf_rectangle(self, target: Distribution):
+        """
+        Evaluates get_pdf function of target distribution then
+        sets parameters to approximate the result.
+        """
+        assert target._event_shape == self._event_shape
+        bounds = self.cell_bounds().to(device = target._device)
+        probs = target.get_rectangle_prob(bounds).to(device = self._device)
+        self._parameter = probs.view(self._parameter.shape)
+        
+    def initialize_from_sample(self, sample: torch.Tensor):
+        """
+        Uses provided sample to approximate probabilities
+        of underlying distribution falling into [a,b) grid cells,
+        then sets parameters based on results.
+        """
+        batch_shape = sample.shape[:len(sample.shape) - len(self._event_shape)]
+        assert sample.shape == batch_shape + self._event_shape
+        sample = sample.view(batch_shape.numel() + (self.event_numel,)
+                             ).to(dtype=torch.float32, device=self._device)
+        centers = self.centers().view(self._parameter.shape + (self.event_numel))
+        half_cell_size = self._cell_size.flatten()/2
+        cell_lower_bounds = ( centers - half_cell_size ).unsqueeze(-2)
+        cell_upper_bounds = ( centers + half_cell_size ).unsqueeze(-2)
+        cell_probs = torch.logical_and(
+                                    cell_lower_bounds < sample,
+                                    cell_upper_bounds >= sample
+                                    ).all(-1).count_nonzero(-1) / batch_shape.numel()
+        self._parameter = cell_probs.view(self._parameter.shape)
+
+    def initialize_from_distribution_empirical(self, count: int, target: Distribution):
+        """
+        Generates 'count' many samples from 'target' distribution,
+        approximate probabilities of samples falling within grid cells,
+        and uses the results to set the parameters.
+        """
+        assert self._event_shape == target._event_shape
+        bounds = self.cell_bounds().to(device = target._device)
+        probs = target.get_empirical_prob_rectangle(count, bounds)
+        self._parameter = probs.to(device = self.device).view(self._parameter.shape)
 
     def sample(self, batch_shape: torch.Size = torch.Size()) -> torch.Tensor:
         flat_indices = torch.multinomial(
