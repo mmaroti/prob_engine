@@ -79,6 +79,7 @@ class ExponentialLayer(torch.nn.Module):
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         return torch.exp(input)
 
+
 class LogarithmLayer(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -86,6 +87,7 @@ class LogarithmLayer(torch.nn.Module):
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         assert torch.all(0.0 < input)
         return torch.log(input)
+
 
 class ProductLayer(torch.nn.Module):
     def __init__(self, size_in: int, size_out: int, device=None):
@@ -110,6 +112,7 @@ class ProductLayer(torch.nn.Module):
 
         temp = torch.matmul(input.log(), self.weight).exp()
         return torch.mul(temp, self.bias)
+
 
 class NormalizerLayer(torch.nn.Module):
     def __init__(self, child: torch.nn.Module):

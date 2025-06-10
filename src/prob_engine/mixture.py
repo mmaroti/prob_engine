@@ -57,8 +57,8 @@ class Mixture(Distribution):
         norm_weights = self._weights.abs()
         norm_weights /= norm_weights.sum()
         counts = numpy.random.multinomial(
-            n = batch_shape.numel(),
-            pvals = norm_weights.detach().numpy())
+            n=batch_shape.numel(),
+            pvals=norm_weights.detach().numpy())
         assert counts.sum() == batch_shape.numel()
         samples = torch.cat(
             [d.sample(torch.Size((c, )))
@@ -66,13 +66,13 @@ class Mixture(Distribution):
             dim=0)
         samples = samples.to(device=self._device)
         assert samples.shape[0] == batch_shape.numel()
-        perm = torch.randperm(batch_shape.numel(), device = self._device)
+        perm = torch.randperm(batch_shape.numel(), device=self._device)
         return samples[perm].view(batch_shape + self._event_shape)
 
     def get_pdf(self, sample: torch.Tensor) -> torch.Tensor:
         batch_shape = sample.shape[: - len(self._event_shape)]
         assert sample.shape == batch_shape + self._event_shape
-        sample = sample.to(device = self._device)
+        sample = sample.to(device=self._device)
 
         norm_weights = self._weights.abs()
         norm_weights /= norm_weights.sum()
@@ -86,7 +86,7 @@ class Mixture(Distribution):
     def get_cdf(self, sample: torch.Tensor) -> torch.Tensor:
         batch_shape = sample.shape[: - len(self._event_shape)]
         assert sample.shape == batch_shape + self._event_shape
-        sample = sample.to(device = self._device)
+        sample = sample.to(device=self._device)
 
         norm_weights = self._weights.abs()
         norm_weights /= norm_weights.sum()
@@ -110,9 +110,9 @@ def test():
                 UniformGrid(torch.tensor(
                     [[0.0, 0.0], [0.5, 1.0]]), torch.tensor([1, 1]))
             ]),
-            UniformBall(torch.tensor([-0.5,0.5]), torch.tensor(0.4)),
-            UniformBall(torch.tensor([0.35,-0.5]), torch.tensor(0.25)),
-            UniformBall(torch.tensor([0.65,-0.5]), torch.tensor(0.25))
+            UniformBall(torch.tensor([-0.5, 0.5]), torch.tensor(0.4)),
+            UniformBall(torch.tensor([0.35, -0.5]), torch.tensor(0.25)),
+            UniformBall(torch.tensor([0.65, -0.5]), torch.tensor(0.25))
         ]
     )
 

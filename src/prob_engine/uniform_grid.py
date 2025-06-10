@@ -15,6 +15,7 @@
 
 from typing import Callable, Iterator, Optional
 import torch
+from torch.nn import Parameter
 
 from .distribution import Distribution
 
@@ -35,7 +36,7 @@ class UniformGrid(Distribution):
         self._cell_volume = self._cell_size.flatten().prod()
 
         # absolute value and normalization is done later
-        self._parameter = torch.nn.Parameter(torch.rand(
+        self._parameter = Parameter(torch.rand(
             size=torch.Size(self._counts.flatten().tolist()),
             dtype=torch.float32,
             device=self._device))
@@ -57,21 +58,20 @@ class UniformGrid(Distribution):
         return self._counts
 
     @property
-    def parameters(self) -> Iterator[torch.nn.Parameter]:
+    def parameters(self) -> Iterator[Parameter]:
         yield self._parameter
 
     def centers(self) -> torch.Tensor:
         """
         Returns center points for all grid cells.
         """
-        ranges = [torch.arange(start=0, end = i,
-                               device = self._device)
-                               for i in self.counts.flatten()]
-        coords = torch.cartesian_prod( *ranges )
-        centers = (self.bounds[0].flatten() 
-                   + ( coords + 0.5 ) * self._cell_size.flatten())
+        ranges = [torch.arange(start=0, end=i, device=self._device)
+                  for i in self.counts.flatten().tolist()]
+        coords = torch.cartesian_prod(*ranges)
+        centers = (self.bounds[0].flatten()
+                   + (coords + 0.5) * self._cell_size.flatten())
         return centers.reshape(self._parameter.shape + self.event_shape)
-    
+
     def cell_bounds(self) -> torch.Tensor:
         """
         Returns pairs of lower and upper bounds for all grid cells.
@@ -81,9 +81,9 @@ class UniformGrid(Distribution):
         half_size = self._cell_size.unsqueeze(-event_dims-1)/2
         cell_bounds = torch.cat(
             [centers - half_size, centers + half_size],
-            dim = -event_dims-1)
+            dim=-event_dims-1)
         assert cell_bounds.shape == self._parameter.shape \
-                                    + (2,) + self._event_shape
+            + (2,) + self._event_shape
         return cell_bounds
 
     def initialize(self, pdf: Callable[[torch.Tensor], float]):
@@ -93,20 +93,21 @@ class UniformGrid(Distribution):
         un-normalized pdf value for that sample.
         """
         centers = self.centers()
-        centers = centers.reshape( (self._parameter.numel(), ) + self.event_shape)
-        self._parameter = torch.stack(
-            [pdf(t) for t in centers],
-            -1  ).reshape(self._parameter.shape)
-    
+        centers = centers.reshape(
+            (self._parameter.numel(), ) + self.event_shape)
+        parameters = self._parameter.view((self._parameter.numel(), ))
+        for i in range(parameters.shape[0]):
+            parameters[i] = pdf(centers[i])
+
     def initialize_from_distribution_pdf_center(self, target: Distribution):
         """
         Evaluates get_pdf function of target distribution then
         sets parameters to approximate the result.
         """
         assert target._event_shape == self._event_shape
-        centers = self.centers().to(device = target._device)
-        pdf = target.get_pdf(centers).to(device = self._device)
-        self._parameter = pdf.view(self._parameter.shape)
+        centers = self.centers().to(device=target._device)
+        pdf = target.get_pdf(centers).to(device=self._device)
+        self._parameter = Parameter(pdf.view(self._parameter.shape))
 
     def initialize_from_distribution_pdf_rectangle(self, target: Distribution):
         """
@@ -114,10 +115,10 @@ class UniformGrid(Distribution):
         sets parameters to approximate the result.
         """
         assert target._event_shape == self._event_shape
-        bounds = self.cell_bounds().to(device = target._device)
-        probs = target.get_rectangle_prob(bounds).to(device = self._device)
-        self._parameter = probs.view(self._parameter.shape)
-        
+        bounds = self.cell_bounds().to(device=target._device)
+        probs = target.get_rectangle_prob(bounds).to(device=self._device)
+        self._parameter = Parameter(probs.view(self._parameter.shape))
+
     def initialize_from_sample(self, sample: torch.Tensor):
         """
         Uses provided sample to approximate probabilities
@@ -126,17 +127,17 @@ class UniformGrid(Distribution):
         """
         batch_shape = sample.shape[:len(sample.shape) - len(self._event_shape)]
         assert sample.shape == batch_shape + self._event_shape
-        sample = sample.view(batch_shape.numel() + (self.event_numel,)
+        sample = sample.view((batch_shape.numel(), self.event_numel)
                              ).to(dtype=torch.float32, device=self._device)
-        centers = self.centers().view(self._parameter.shape + (self.event_numel))
+        centers = self.centers().view(self._parameter.shape + (self.event_numel, ))
         half_cell_size = self._cell_size.flatten()/2
-        cell_lower_bounds = ( centers - half_cell_size ).unsqueeze(-2)
-        cell_upper_bounds = ( centers + half_cell_size ).unsqueeze(-2)
+        cell_lower_bounds = (centers - half_cell_size).unsqueeze(-2)
+        cell_upper_bounds = (centers + half_cell_size).unsqueeze(-2)
         cell_probs = torch.logical_and(
-                                    cell_lower_bounds < sample,
-                                    cell_upper_bounds >= sample
-                                    ).all(-1).count_nonzero(-1) / batch_shape.numel()
-        self._parameter = cell_probs.view(self._parameter.shape)
+            cell_lower_bounds < sample,
+            cell_upper_bounds >= sample
+        ).all(-1).count_nonzero(-1) / batch_shape.numel()
+        self._parameter = Parameter(cell_probs.view(self._parameter.shape))
 
     def initialize_from_distribution_empirical(self, count: int, target: Distribution):
         """
@@ -145,9 +146,10 @@ class UniformGrid(Distribution):
         and uses the results to set the parameters.
         """
         assert self._event_shape == target._event_shape
-        bounds = self.cell_bounds().to(device = target._device)
+        bounds = self.cell_bounds().to(device=target._device)
         probs = target.get_empirical_prob_rectangle(count, bounds)
-        self._parameter = probs.to(device = self.device).view(self._parameter.shape)
+        self._parameter = Parameter(probs.to(
+            device=self.device).view(self._parameter.shape))
 
     def sample(self, batch_shape: torch.Size = torch.Size()) -> torch.Tensor:
         flat_indices = torch.multinomial(
@@ -211,24 +213,25 @@ class UniformGrid(Distribution):
         return torch.log(self.get_pdf(sample))
 
     def get_cdf(self, sample: torch.Tensor) -> torch.Tensor:
-        batch_shape = sample.shape[:len(sample.shape) - len(self._event_shape)]
+        batch_shape = sample.shape[:-len(self._event_shape)]
         assert sample.shape == batch_shape + self._event_shape
         sample = sample.to(dtype=torch.float32, device=self._device)
-        flat_sample = sample.view( (batch_shape.numel(), self.event_numel) )
+        flat_sample = sample.view((batch_shape.numel(), self.event_numel))
 
         flat_params = self._parameter.flatten().abs()
-        flat_params *= 1.0/(flat_params.sum())
+        flat_params *= 1.0 / flat_params.sum()
 
         flat_centers = self.centers().view(
-             (flat_params.numel(), self.event_numel) )
-        cell_lower_corners = flat_centers - self._cell_size.flatten()/2
+            (flat_params.numel(), self.event_numel))
+        cell_lower_corners = flat_centers - 0.5 * self._cell_size.flatten()
 
+        # excess shape: [batch_shape.numel(), flat_params.numel(), event_shape.numel()]
         excess = (flat_sample.unsqueeze(1) - cell_lower_corners).relu()
-        volume = torch.minimum(excess, 
-                               self._cell_size.view( 
-                                   (1,self.event_numel) 
-                                   ) ).prod(-1)
-        prob = (volume / self._cell_volume) * flat_params
+        volume = torch.minimum(excess,
+                               self._cell_size.view(
+                                   (1, self.event_numel)
+                               )).prod(-1)
+        prob = volume * ((1.0 / self._cell_volume) * flat_params)
         return prob.sum(-1).view(batch_shape)
 
 

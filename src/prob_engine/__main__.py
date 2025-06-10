@@ -58,4 +58,3 @@ def test_empcdf():
 
     values = grid.get_empirical_cdf(100, points)
     print(values.shape)
-

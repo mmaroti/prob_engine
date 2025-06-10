@@ -47,9 +47,9 @@ class MultiNormal(Distribution):
 
     def sample(self, batch_shape: torch.Size = torch.Size()) -> torch.Tensor:
         standard = torch.normal(0.0, 1.0,
-                                 size=batch_shape + (self.event_numel, ),
-                                 device=self._device
-                                 ).view(batch_shape + self._event_shape)
+                                size=batch_shape + (self.event_numel, ),
+                                device=self._device
+                                ).view(batch_shape + self._event_shape)
         result = self._means + standard * self._sdevs.abs()
         return result
 
@@ -59,11 +59,11 @@ class MultiNormal(Distribution):
         batch_shape = sample.shape[:-len(self._event_shape)]
         assert sample.shape == batch_shape + self._event_shape
         sample = sample.view(batch_shape + (self.event_numel, )
-                            ).to(device = self._device)
+                             ).to(device=self._device)
         flat_means = self._means.flatten()
         flat_sdevs = self._sdevs.abs().flatten()
 
-        coeff = torch.tensor(2 * torch.pi, device = self._device)
+        coeff = torch.tensor(2 * torch.pi, device=self._device)
         coeff = coeff.pow(-self.event_numel/2.0)
         sqrdet = flat_sdevs.prod()
         exparg = sample - flat_means
@@ -77,17 +77,17 @@ class MultiNormal(Distribution):
         batch_shape = sample.shape[:-len(self._event_shape)]
         assert sample.shape == batch_shape + self._event_shape
         sample = sample.view(batch_shape + (self.event_numel, )
-                             ).to(device = self._device)
+                             ).to(device=self._device)
         flat_means = self._means.flatten()
         flat_sdevs = self._sdevs.abs().flatten()
 
-        coeff = torch.tensor(2 * torch.pi, device = self._device)
+        coeff = torch.tensor(2 * torch.pi, device=self._device)
         sqrdetlog = flat_sdevs.prod().log()
         exparg = sample - flat_means
         exparg = exparg.pow(2) / flat_sdevs.pow(2)
         exparg = -0.5 * exparg.sum(-1)
         result = - self.event_numel * coeff.log() / 2.0 \
-                - sqrdetlog + exparg
+            - sqrdetlog + exparg
         return result
 
     def get_cdf(self, sample: torch.Tensor) -> torch.Tensor:
@@ -96,14 +96,14 @@ class MultiNormal(Distribution):
         batch_shape = sample.shape[:-len(self._event_shape)]
         assert sample.shape == batch_shape + self._event_shape
         sample = sample.view(batch_shape + (self.event_numel, )
-                             ).to(device = self._device)
+                             ).to(device=self._device)
         flat_means = self._means.flatten()
         flat_sdevs = self._sdevs.abs().flatten()
         """
         Currently, covariance matrix is assumed to be diagonal,
         which implies that the coordinates are independent.
         """
-        sq2 = torch.tensor(2, device = self._device).sqrt()
+        sq2 = torch.tensor(2, device=self._device).sqrt()
         arg = sample - flat_means
         arg = arg / (flat_sdevs * sq2)
         result = 0.5 + 0.5 * torch.erf(arg)
