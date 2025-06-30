@@ -100,10 +100,11 @@ class Distribution:
 
     def get_rectangle_prob(self, sample: torch.Tensor) -> torch.Tensor:
         """
-        Calculates the exact probability measure of an [a,b) rectangle
+        Calculates the exact probability measure of an [a,b] rectangle
         using the CDF function of the distribution.
         For each rectangle, evaluates CDF at the 2^(self.event_numel)
-        corners of the rectangle, which then yields the probability.
+        corners of the rectangle, which then yields its measure
+        by way of the inclusion-exclusion principle.
         """
         batch_shape = sample.shape[:-len(self._event_shape) - 1]
         assert sample.shape == batch_shape + (2,) + self._event_shape
@@ -123,6 +124,8 @@ class Distribution:
         result = (self.get_cdf(corners) *
                   (2*(combs01.count_nonzero(-1) % 2)-1)
                   ).sum(-1)
+        if self.event_numel % 2 == 0:
+            result *= -1
         return result.view(batch_shape)
 
     def get_empirical_cdf(self,
