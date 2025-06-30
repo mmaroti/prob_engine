@@ -88,21 +88,30 @@ class UniformGrid(Distribution):
 
     def initialize(self, pdf: Callable[[torch.Tensor], float]):
         """
-        For each grid cell it calls the given pdf function with
-        the center of that grid cell which in turn returns the 
-        un-normalized pdf value for that sample.
+        For each grid cell it calls the given pdf function,
+        evaluating it at the center of that grid cell,
+        then sets parameters to approximate result.
         """
         centers = self.centers()
         centers = centers.reshape(
             (self._parameter.numel(), ) + self.event_shape)
-        parameters = self._parameter.view((self._parameter.numel(), ))
-        for i in range(parameters.shape[0]):
-            parameters[i] = pdf(centers[i])
+        pdfvals = torch.tensor([pdf(c) for c in centers],
+                               dtype = torch.float32, device = self._device)
+        self._parameter = Parameter(pdfvals.view(self._parameter.shape))
+    
+    def initialize_tensor(self, pdf: Callable[[torch.Tensor], torch.Tensor]):
+        """
+        Calls the pdf function for the center of each grid cell at once,
+        then sets parameters to approximate result.
+        """
+        centers = self.centers()
+        pdfvals = pdf(centers).to(dtype=torch.float32, device=self._device)
+        self._parameter = Parameter(pdfvals)
 
     def initialize_from_distribution_pdf_center(self, target: Distribution):
         """
-        Evaluates get_pdf function of target distribution then
-        sets parameters to approximate the result.
+        Evaluates get_pdf function of target distribution,
+        then sets parameters to approximate the result.
         """
         assert target._event_shape == self._event_shape
         centers = self.centers().to(device=target._device)
@@ -111,8 +120,8 @@ class UniformGrid(Distribution):
 
     def initialize_from_distribution_pdf_rectangle(self, target: Distribution):
         """
-        Evaluates get_pdf function of target distribution then
-        sets parameters to approximate the result.
+        Calculates the probability mass assigned to grid cells
+        by target distribution, then sets parameters to approximate the result.
         """
         assert target._event_shape == self._event_shape
         bounds = self.cell_bounds().to(device=target._device)
@@ -142,8 +151,8 @@ class UniformGrid(Distribution):
     def initialize_from_distribution_empirical(self, count: int, target: Distribution):
         """
         Generates 'count' many samples from 'target' distribution,
-        approximate probabilities of samples falling within grid cells,
-        and uses the results to set the parameters.
+        approximates probabilities of samples falling within grid cells,
+        then sets parameters based on results.
         """
         assert self._event_shape == target._event_shape
         bounds = self.cell_bounds().to(device=target._device)
@@ -252,6 +261,7 @@ def test():
             [[-0.9, 0.1], [0.9, -0.1], [-1.1, 0.0]])))
 
     if True:
+        """ 1 dimensional tests """
         grid1 = UniformGrid(
             torch.tensor([[-0.75], [0.75]]),
             torch.tensor([4]))
@@ -260,6 +270,7 @@ def test():
         grid1.plot_empirical_cdf()
         grid1.plot_exact_cdf()
 
+        """ 2 dimensional tests """
         grid2 = UniformGrid(
             torch.tensor([[-1.0, -1.0], [1.0, 1.0]]),
             torch.tensor([2, 2]))
@@ -268,3 +279,51 @@ def test():
         grid2.plot_exact_pdf()
         grid2.plot_empirical_cdf()
         grid2.plot_exact_cdf()
+
+        print(grid2._parameter/grid2._parameter.sum())
+        print(grid2.get_rectangle_prob(grid2.cell_bounds()))
+
+        """ Parameter initialization tests """
+        from .multi_normal import MultiNormal
+        import time
+        grid3 = UniformGrid(
+            torch.tensor([[-1.0,-1.0],[1.0,1.0]]),
+            torch.tensor([100, 100]))
+        test_dist = MultiNormal(
+            torch.tensor([0.5,0.5]),
+            torch.tensor([0.2, 1.0]))
+        def pdf_func(x: torch.Tensor) -> float:
+            return test_dist.get_pdf(x).item()
+        grid3.plot_exact_pdf()
+        test_dist.plot_exact_pdf()
+        start = time.time()
+        grid3.initialize(pdf_func)
+        end = time.time()
+        print("Initialization time:", end-start)
+        grid3.plot_exact_pdf()
+        start = time.time()
+        grid3.initialize_tensor(test_dist.get_pdf)
+        end = time.time()
+        print("Initialization tensor time:", end-start)
+        grid3.plot_exact_pdf()
+        start = time.time()
+        grid3.initialize_from_sample(test_dist.sample(torch.Size((10000,))))
+        end = time.time()
+        print("Initialization from sample time:", end-start)
+        grid3.plot_exact_pdf()
+        start = time.time()
+        grid3.initialize_from_distribution_empirical(10000, test_dist)
+        end = time.time()
+        print("Initialization from empirical time:", end-start)
+        grid3.plot_exact_pdf()
+        start = time.time()
+        grid3.initialize_from_distribution_pdf_center(test_dist)
+        end = time.time()
+        print("Initialization from pdf centers time:", end-start)
+        grid3.plot_exact_pdf()
+        start = time.time()
+        grid3.initialize_from_distribution_pdf_rectangle(test_dist)
+        end = time.time()
+        print("Initialization from pdf rectangles time:", end-start)
+        grid3.plot_exact_pdf()
+        test_dist.plot_exact_pdf()
