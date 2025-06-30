@@ -43,7 +43,42 @@ class PosLinearLayer(torch.nn.Module):
         weight = torch.abs(self.weight)
         temp = torch.matmul(input, weight)
         return torch.add(temp, self.bias)
+    
+class PosQuadraticLayer(torch.nn.Module):
+    def __init__(self, size_in: int, size_out: int, device=None):
+        super().__init__()
 
+        assert size_in > 0 and size_out > 0
+        self.size_in = size_in
+        self.size_out = size_out
+
+        self.weight1 = torch.nn.Parameter(
+            torch.empty((size_in, size_out),
+                         device=device, dtype=torch.float32))
+        self.weight2 = torch.nn.Parameter(
+            torch.empty((size_in, size_in, size_out),
+                         device=device, dtype=torch.float32))
+        self.bias = torch.nn.Parameter(
+            torch.empty((size_out,),
+                         device=device, dtype=torch.float32))
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        bound = 1.0 / math.sqrt(self.size_in)
+        torch.nn.init.uniform_(self.weight1, -bound, bound)
+        torch.nn.init.uniform_(self.weight2, -bound, bound)
+        torch.nn.init.uniform_(self.bias, -bound, bound)
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        temp = self.weight1.abs()
+        temp = torch.matmul(input, temp)
+        result = temp
+        temp = self.weight2.abs()
+        temp = torch.einsum("...bi,jik->...bjk", input, temp)
+        temp = torch.einsum("...bi,...bki->...bk", input, temp)
+        result = torch.add(result, temp)
+        result = torch.add(result, self.bias)
+        return result
 
 class MinMaxLayer(torch.nn.Module):
     def __init__(self):
@@ -79,16 +114,6 @@ class ExponentialLayer(torch.nn.Module):
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         return torch.exp(input)
 
-
-class LogarithmLayer(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
-        assert torch.all(0.0 < input)
-        return torch.log(input)
-
-
 class ProductLayer(torch.nn.Module):
     def __init__(self, size_in: int, size_out: int, device=None):
         super().__init__()
@@ -104,14 +129,14 @@ class ProductLayer(torch.nn.Module):
         self.reset_parameters()
 
     def reset_parameters(self):
-        torch.nn.init.uniform_(self.weight, -2, 2)
+        torch.nn.init.normal_(self.weight, 0, 1)
         torch.nn.init.uniform_(self.bias, 0, 1)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         assert torch.all(0.0 < input)
-
-        temp = torch.matmul(input.log(), self.weight).exp()
-        return torch.mul(temp, self.bias)
+        weight = self.weight.abs() + 2
+        temp = torch.matmul(input.log(), weight).exp()
+        return torch.mul(temp, self.bias.abs())
 
 
 class NormalizerLayer(torch.nn.Module):
