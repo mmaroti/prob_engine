@@ -19,7 +19,7 @@ import torch
 from .distribution import Distribution
 
 
-class MultiNormal(Distribution):
+class Normal(Distribution):
     def __init__(self,
                  means: torch.Tensor,
                  sdevs: torch.Tensor,
@@ -112,7 +112,7 @@ class MultiNormal(Distribution):
 
 
 def test():
-    dist1 = MultiNormal(torch.tensor([0.0]), torch.tensor([0.5]))
+    dist1 = Normal(torch.tensor([0.0]), torch.tensor([0.5]))
     print("Event shape", dist1.event_shape)
     print("Parameters", list(dist1.parameters))
     dist1.plot_empirical_pdf()
@@ -120,7 +120,7 @@ def test():
     dist1.plot_empirical_cdf()
     dist1.plot_exact_cdf()
 
-    dist2 = MultiNormal(
+    dist2 = Normal(
         torch.tensor([0.0, 0.0]),
         0.1*torch.tensor([1.0, 0.3]))
     print("Event shape", dist2.event_shape)

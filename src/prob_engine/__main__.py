@@ -29,8 +29,8 @@ def test_uniform():
 
 @cli.command()
 def test_normal():
-    from . import multi_normal
-    multi_normal.test()
+    from . import normal
+    normal.test()
 
 
 @cli.command()

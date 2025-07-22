@@ -284,12 +284,12 @@ def test():
         print(grid2.get_rectangle_prob(grid2.cell_bounds()))
 
         """ Parameter initialization tests """
-        from .multi_normal import MultiNormal
+        from .normal import Normal
         import time
         grid3 = UniformGrid(
             torch.tensor([[-1.0, -1.0], [1.0, 1.0]]),
             torch.tensor([100, 100]))
-        test_dist = MultiNormal(
+        test_dist = Normal(
             torch.tensor([0.5, 0.5]),
             torch.tensor([0.2, 1.0]))
 
