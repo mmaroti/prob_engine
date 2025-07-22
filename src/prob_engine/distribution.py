@@ -212,6 +212,7 @@ class Distribution:
                         bins=bins,
                         range=(min_bound, max_bound),
                         density=True)
+            pyplot.title("Empiricial PDF")
             pyplot.show()
         elif self.event_numel == 2:
             sample = self.sample(torch.Size((count, )))
@@ -223,6 +224,7 @@ class Distribution:
                           density=True,
                           rasterized=True)
             pyplot.colorbar()
+            pyplot.title("Empiricial PDF")
             pyplot.show()
         else:
             raise ValueError("invalid event size")
@@ -245,6 +247,7 @@ class Distribution:
                         range=(min_bound, max_bound),
                         density=True,
                         cumulative=True)
+            pyplot.title("Empiricial CDF")
             pyplot.show()
         elif self.event_numel == 2:
             sample = self.sample(torch.Size((count, )))
@@ -263,6 +266,7 @@ class Distribution:
                 numpy.transpose(values),
                 rasterized=True)
             pyplot.colorbar()
+            pyplot.title("Empiricial CDF")
             pyplot.show()
         else:
             raise ValueError("invalid event size")
@@ -290,6 +294,7 @@ class Distribution:
                 x=sample.cpu().flatten().numpy(),
                 height=value.cpu().flatten().detach().numpy(),
                 width=width)
+            pyplot.title("Exact PDF")
             pyplot.show()
         elif self.event_numel == 2:
             width = (max_bound - min_bound) / bins
@@ -309,6 +314,7 @@ class Distribution:
                 value2.cpu().detach().numpy(),
                 rasterized=True)
             pyplot.colorbar()
+            pyplot.title("Exact PDF")
             pyplot.show()
         else:
             raise ValueError("invalid event size")
@@ -336,6 +342,7 @@ class Distribution:
                 x=sample.cpu().flatten().numpy(),
                 height=value.cpu().flatten().numpy(),
                 width=width)
+            pyplot.title("Exact CDF")
             pyplot.show()
         elif self.event_numel == 2:
             width = (max_bound - min_bound) / bins
@@ -355,6 +362,7 @@ class Distribution:
                 value2.cpu().numpy(),
                 rasterized=True)
             pyplot.colorbar()
+            pyplot.title("Exact CDF")
             pyplot.show()
         else:
             raise ValueError("invalid event size")

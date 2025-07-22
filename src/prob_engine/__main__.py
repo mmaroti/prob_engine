@@ -64,3 +64,9 @@ def test_empcdf():
 def test_discrete():
     from . import discrete
     discrete.test()
+
+
+@cli.command()
+def test_uniform_ball():
+    from .testers import uniform_grid_ball
+    uniform_grid_ball.test()

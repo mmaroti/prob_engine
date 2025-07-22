@@ -137,6 +137,7 @@ class ProductLayer(torch.nn.Module):
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         assert torch.all(0.0 < input)
+        # Needs 2 to ensure that the second derivatives are positive
         weight = self.weight.abs() + 2
         temp = torch.matmul(input.log(), weight).exp()
         return torch.mul(temp, self.bias.abs())
