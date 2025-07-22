@@ -58,3 +58,9 @@ def test_empcdf():
 
     values = grid.get_empirical_cdf(100, points)
     print(values.shape)
+
+
+@cli.command()
+def test_discrete():
+    from . import discrete
+    discrete.test()
