@@ -20,13 +20,14 @@ from prob_engine.distribution import Distribution
 from prob_engine.uniform_grid import UniformGrid
 from prob_engine.testers.uniform_ball import UniformBall
 
+
 class UniformGridBall(UniformGrid):
     def __init__(self,
                  center: torch.Tensor,
                  radius: torch.Tensor,
                  counts: torch.Tensor,
                  device: Optional[str] = None):
-        
+
         assert radius.numel() == 1
         assert (radius >= 0).all()
         bounds = torch.stack((center - radius.abs(), center + radius.abs()), 0)
@@ -35,15 +36,18 @@ class UniformGridBall(UniformGrid):
         BallDist = UniformBall(center, radius, device)
         self.initialize_from_distribution_pdf_rectangle(BallDist)
 
+
 def test():
-    dist1 = UniformGridBall(torch.tensor([0.25]), torch.tensor(0.25), torch.tensor([10]))
+    dist1 = UniformGridBall(torch.tensor(
+        [0.25]), torch.tensor(0.25), torch.tensor([10]))
     print("Parameters", list(dist1.parameters))
     dist1.plot_exact_pdf()
     dist1.plot_empirical_pdf()
     dist1.plot_empirical_cdf()
     dist1.plot_exact_cdf()
 
-    dist2 = UniformGridBall(torch.tensor([-0.5, -0.5]), torch.tensor(0.5), torch.tensor([10, 10]))
+    dist2 = UniformGridBall(torch.tensor(
+        [-0.5, -0.5]), torch.tensor(0.5), torch.tensor([10, 10]))
     distBall = UniformBall(torch.tensor([-0.5, -0.5]), torch.tensor(0.5))
     print("Parameters", list(dist2.parameters))
     dist2.plot_exact_pdf()
@@ -52,4 +56,3 @@ def test():
     dist2.plot_empirical_cdf()
     dist2.plot_exact_cdf()
     distBall.plot_empirical_cdf()
-

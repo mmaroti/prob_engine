@@ -29,11 +29,13 @@ class MixtureNormal(Distribution):
         assert means.shape == sdevs.shape
 
         Distribution.__init__(self, means.shape[1:], device=device)
-        self._means = Parameter(means.to(dtype=torch.float32, device=self._device))
-        self._sdevs = Parameter(sdevs.to(dtype=torch.float32, device=self._device))
+        self._means = Parameter(
+            means.to(dtype=torch.float32, device=self._device))
+        self._sdevs = Parameter(
+            sdevs.to(dtype=torch.float32, device=self._device))
         self._weights = Parameter(torch.rand(
-                size=(means.shape[0],), dtype=torch.float32, device=self._device))
-        
+            size=(means.shape[0],), dtype=torch.float32, device=self._device))
+
     @property
     def means(self) -> torch.Tensor:
         return self._means
@@ -41,7 +43,7 @@ class MixtureNormal(Distribution):
     @property
     def sdevs(self) -> torch.Tensor:
         return self._sdevs
-    
+
     @property
     def weights(self) -> torch.Tensor:
         return self._weights
@@ -51,22 +53,22 @@ class MixtureNormal(Distribution):
         yield self._means
         yield self._sdevs
         yield self._weights
-    
+
     def reset_weights(self):
-        weights = torch.rand(self._weights.shape, 
-                       dtype=torch.float32, device=self._device)
+        weights = torch.rand(self._weights.shape,
+                             dtype=torch.float32, device=self._device)
         self._weights = Parameter(weights)
-    
+
     def initialize_weights(self, weights: torch.Tensor):
         assert weights.numel() == self._weights.numel()
         assert weights.count_nonzero() > 0
         self._weights = Parameter(
             weights.view(self._weights.shape).to(
                 dtype=torch.float32, device=self._device))
-    
+
     def initialize_from_discrete(self, d: Distribution):
         from prob_engine import discrete
-        if d.isinstance(discrete.Discrete):
+        if isinstance(d, discrete.Discrete):
             raise NotImplementedError()
         else:
             raise NotImplementedError()
@@ -89,18 +91,18 @@ class MixtureNormal(Distribution):
             batch_shape = means.shape[:-len(self._event_shape)]
             assert means.shape == batch_shape + self._event_shape
             means = means.view((batch_shape.numel(),)+self._event_shape
-                            ).to(dtype=torch.float32,device=self._device)
+                               ).to(dtype=torch.float32, device=self._device)
             sdevs = sdevs.view((batch_shape.numel(),)+self._event_shape
-                               ).to(dtype=torch.float32,device=self._device)
+                               ).to(dtype=torch.float32, device=self._device)
             w_sum = self._weights.abs().sum()
             fill_val = w_sum.item()/(w_sum.item()+batch_shape.numel())
-            weights = torch.full(size = (batch_shape.numel(),),
+            weights = torch.full(size=(batch_shape.numel(),),
                                  fill_value=fill_val,
                                  dtype=torch.float32, device=self._device)
             self._means = Parameter(torch.cat((self._means, means), 0))
             self._sdevs = Parameter(torch.cat((self._means, sdevs), 0))
-            self._weights = Parameter(torch.cat((self._weights, weights),0))
-    
+            self._weights = Parameter(torch.cat((self._weights, weights), 0))
+
     def sample(self, batch_shape: torch.Size = torch.Size()) -> torch.Tensor:
         selection = torch.multinomial(
             self._weights.abs(),
@@ -110,14 +112,15 @@ class MixtureNormal(Distribution):
                                 size=batch_shape + (self.event_numel, ),
                                 device=self._device
                                 ).view(batch_shape + self._event_shape)
-        result = self._means[selection] + standard * self._sdevs.abs()[selection]
+        result = self._means[selection] + \
+            standard * self._sdevs.abs()[selection]
         return result
-    
+
     def get_pdf(self, sample: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError()
-    
+
     def log_prob(self, sample: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError()
-    
+
     def get_cdf(self, sample: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError()

@@ -43,7 +43,8 @@ class PosLinearLayer(torch.nn.Module):
         weight = torch.abs(self.weight)
         temp = torch.matmul(input, weight)
         return torch.add(temp, self.bias)
-    
+
+
 class PosQuadraticLayer(torch.nn.Module):
     def __init__(self, size_in: int, size_out: int, device=None):
         super().__init__()
@@ -54,13 +55,13 @@ class PosQuadraticLayer(torch.nn.Module):
 
         self.weight1 = torch.nn.Parameter(
             torch.empty((size_in, size_out),
-                         device=device, dtype=torch.float32))
+                        device=device, dtype=torch.float32))
         self.weight2 = torch.nn.Parameter(
             torch.empty((size_in, size_in, size_out),
-                         device=device, dtype=torch.float32))
+                        device=device, dtype=torch.float32))
         self.bias = torch.nn.Parameter(
             torch.empty((size_out,),
-                         device=device, dtype=torch.float32))
+                        device=device, dtype=torch.float32))
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -79,6 +80,7 @@ class PosQuadraticLayer(torch.nn.Module):
         result = torch.add(result, temp)
         result = torch.add(result, self.bias)
         return result
+
 
 class MinMaxLayer(torch.nn.Module):
     def __init__(self):
@@ -113,6 +115,7 @@ class ExponentialLayer(torch.nn.Module):
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         return torch.exp(input)
+
 
 class ProductLayer(torch.nn.Module):
     def __init__(self, size_in: int, size_out: int, device=None):

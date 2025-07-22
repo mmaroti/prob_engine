@@ -96,9 +96,9 @@ class UniformGrid(Distribution):
         centers = centers.reshape(
             (self._parameter.numel(), ) + self.event_shape)
         pdfvals = torch.tensor([pdf(c) for c in centers],
-                               dtype = torch.float32, device = self._device)
+                               dtype=torch.float32, device=self._device)
         self._parameter = Parameter(pdfvals.view(self._parameter.shape))
-    
+
     def initialize_tensor(self, pdf: Callable[[torch.Tensor], torch.Tensor]):
         """
         Calls the pdf function for the center of each grid cell at once,
@@ -287,11 +287,12 @@ def test():
         from .multi_normal import MultiNormal
         import time
         grid3 = UniformGrid(
-            torch.tensor([[-1.0,-1.0],[1.0,1.0]]),
+            torch.tensor([[-1.0, -1.0], [1.0, 1.0]]),
             torch.tensor([100, 100]))
         test_dist = MultiNormal(
-            torch.tensor([0.5,0.5]),
+            torch.tensor([0.5, 0.5]),
             torch.tensor([0.2, 1.0]))
+
         def pdf_func(x: torch.Tensor) -> float:
             return test_dist.get_pdf(x).item()
         grid3.plot_exact_pdf()

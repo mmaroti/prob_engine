@@ -52,12 +52,12 @@ class Mixture(Distribution):
         yield self._weights
         for d in self._distributions:
             yield from d.parameters
-        
+
     def reset_weights(self):
-        weights = torch.rand(self._weights.shape, 
-             dtype=torch.float32, device=self._device)
+        weights = torch.rand(self._weights.shape,
+                             dtype=torch.float32, device=self._device)
         self._weights = torch.nn.Parameter(weights)
-    
+
     def initialize_weights(self, weights: torch.Tensor):
         assert weights.numel() == self._weights.numel()
         assert weights.count_nonzero() > 0
