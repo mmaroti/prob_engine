@@ -52,10 +52,22 @@ class Mixture(Distribution):
         yield self._weights
         for d in self._distributions:
             yield from d.parameters
+        
+    def reset_weights(self):
+        weights = torch.rand(self._weights.shape, 
+             dtype=torch.float32, device=self._device)
+        self._weights = torch.nn.Parameter(weights)
+    
+    def initialize_weights(self, weights: torch.Tensor):
+        assert weights.numel() == self._weights.numel()
+        assert weights.count_nonzero() > 0
+        self._weights = torch.nn.Parameter(
+            weights.view(self._weights.shape).to(
+                dtype=torch.float32, device=self._device))
 
     def sample(self, batch_shape: torch.Size = torch.Size()) -> torch.Tensor:
         norm_weights = self._weights.abs()
-        norm_weights /= norm_weights.sum()
+        norm_weights *= 1.0/norm_weights.sum()
         counts = numpy.random.multinomial(
             n=batch_shape.numel(),
             pvals=norm_weights.detach().numpy())
@@ -97,7 +109,6 @@ class Mixture(Distribution):
 
 def test():
     from .uniform_grid import UniformGrid
-    from .uniform_ball import UniformBall
     dist = Mixture(
         [
             UniformGrid(torch.tensor(
@@ -109,10 +120,7 @@ def test():
                     [[-0.5, -0.5], [0.0, 0.0]]), torch.tensor([1, 1])),
                 UniformGrid(torch.tensor(
                     [[0.0, 0.0], [0.5, 1.0]]), torch.tensor([1, 1]))
-            ]),
-            UniformBall(torch.tensor([-0.5, 0.5]), torch.tensor(0.4)),
-            UniformBall(torch.tensor([0.35, -0.5]), torch.tensor(0.25)),
-            UniformBall(torch.tensor([0.65, -0.5]), torch.tensor(0.25))
+            ])
         ]
     )
 
