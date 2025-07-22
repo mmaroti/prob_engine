@@ -14,7 +14,6 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 from typing import Iterator, Optional
-import numpy
 import torch
 from torch.nn import Parameter
 
@@ -106,7 +105,7 @@ class MixtureNormal(Distribution):
         selection = torch.multinomial(
             self._weights.abs(),
             batch_shape.numel(),
-            replacement=True)
+            replacement=True).view(batch_shape)
         standard = torch.normal(0.0, 1.0,
                                 size=batch_shape + (self.event_numel, ),
                                 device=self._device
