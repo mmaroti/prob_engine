@@ -65,8 +65,23 @@ def test_discrete():
     from . import discrete
     discrete.test()
 
+@cli.command()
+def test_mixture_normal():
+    from . import mixture_normal
+    mixture_normal.test()
+
 
 @cli.command()
-def test_uniform_ball():
+def test_uniform_grid_ball():
     from .testers import uniform_grid_ball
     uniform_grid_ball.test()
+
+@cli.command()
+def test_uniform_grid_shell():
+    from .testers import uniform_grid_shell
+    uniform_grid_shell.test()
+
+@cli.command()
+def test_uniform_grid_normal():
+    from .testers import uniform_grid_normal
+    uniform_grid_normal.test()
