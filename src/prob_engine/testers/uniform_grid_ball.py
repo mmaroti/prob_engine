@@ -13,12 +13,11 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from typing import Iterator, Optional
+from typing import Optional
 import torch
 
 from prob_engine.distribution import Distribution
 from prob_engine.uniform_grid import UniformGrid
-from prob_engine.testers.uniform_ball import UniformBall
 
 
 class UniformGridBall(UniformGrid):
@@ -26,33 +25,61 @@ class UniformGridBall(UniformGrid):
                  center: torch.Tensor,
                  radius: torch.Tensor,
                  counts: torch.Tensor,
+                 use_exact_rectangle_probs: bool = False,
                  device: Optional[str] = None):
 
         assert radius.numel() == 1
         assert (radius >= 0).all()
+        assert center.shape == counts.shape
         bounds = torch.stack((center - radius.abs(), center + radius.abs()), 0)
-        print(bounds.shape, counts.shape)
         UniformGrid.__init__(self, bounds, counts, device)
-        BallDist = UniformBall(center, radius, device)
-        self.initialize_from_distribution_pdf_rectangle(BallDist)
+        if use_exact_rectangle_probs:
+            if self.event_numel > 2:
+                raise NotImplementedError()
+            from prob_engine.misc.uniform_ball import UniformBall
+            BallDist = UniformBall(center, radius, device)
+            self.initialize_from_distribution_pdf_rectangle(BallDist)
+        else: 
+            centers = self.centers().view(self._counts.prod(), self.event_numel)
+            inside = (centers - center.view((self.event_numel,))
+                      ).pow(2).sum(-1) <= radius.pow(2).item()
+            inside = inside.to(dtype=torch.float32, device=self._device)
+            self._parameter = torch.nn.Parameter(inside.view(self._parameter.shape))
 
 
 def test():
+    from prob_engine.misc.uniform_ball import UniformBall
     dist1 = UniformGridBall(torch.tensor(
         [0.25]), torch.tensor(0.25), torch.tensor([10]))
     print("Parameters", list(dist1.parameters))
     dist1.plot_exact_pdf()
     dist1.plot_empirical_pdf()
-    dist1.plot_empirical_cdf()
     dist1.plot_exact_cdf()
+    dist1.plot_empirical_cdf()
 
     dist2 = UniformGridBall(torch.tensor(
         [-0.5, -0.5]), torch.tensor(0.5), torch.tensor([10, 10]))
     distBall = UniformBall(torch.tensor([-0.5, -0.5]), torch.tensor(0.5))
     print("Parameters", list(dist2.parameters))
     dist2.plot_exact_pdf()
-    distBall.plot_empirical_pdf()
+    distBall.plot_exact_pdf()
     dist2.plot_empirical_pdf()
-    dist2.plot_empirical_cdf()
+    distBall.plot_empirical_pdf()
     dist2.plot_exact_cdf()
+    distBall.plot_exact_cdf()
+    dist2.plot_empirical_cdf()
     distBall.plot_empirical_cdf()
+
+    dist3 = UniformGridBall(torch.tensor(
+        [-0.5, -0.5]), torch.tensor(0.5), torch.tensor([10, 10]), True)
+    print("Parameters", list(dist3.parameters))
+    dist3.plot_exact_pdf()
+    distBall.plot_exact_pdf()
+    dist3.plot_empirical_pdf()
+    distBall.plot_empirical_pdf()
+    dist3.plot_exact_cdf()
+    distBall.plot_exact_cdf()
+    dist3.plot_empirical_cdf()
+    distBall.plot_empirical_cdf()
+
+    
