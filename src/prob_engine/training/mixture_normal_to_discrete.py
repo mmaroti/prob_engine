@@ -29,18 +29,21 @@ dist = MixtureNormal(means, sdevs*0.2)
 compare_dist = MixtureNormal(means, sdevs)
 compare_dist.initialize_from_distribution(target_dist)
 target_dist.plot_exact_cdf()
+#target_dist.plot_exact_pdf()
 compare_dist.plot_exact_cdf()
+compare_dist.plot_exact_pdf()
 points = multilinspace(torch.tensor([0.0,0.0]), torch.tensor([1.0,1.0]), torch.tensor([100,100]))
+
 def my_loss(d1: Distribution, d2: Distribution)->torch.Tensor:
     return cdf_cdf_Lp(d1, d2, points, 2)
 print("Error between target and target-initialized distribution:",
       my_loss(compare_dist, target_dist).max().item())
 train_distribution(dist, target_dist, 10000, my_loss)
-dist.plot_exact_cdf()
-compare_dist.plot_exact_cdf()
-bounds = torch.tensor([[-1,-1],[1,1]])
-def my_loss2(d1: Distribution, d2: Distribution)->torch.Tensor:
-    return cdf_cdf_E_Lp(d1, d2, bounds, 20, 500, 2)
-dist2 = MixtureNormal(means, sdevs*0.5)
-train_distribution(dist2, target_dist, 10000, my_loss2)
+
+if False:
+    bounds = torch.tensor([[-1,-1],[1,1]])
+    def my_loss2(d1: Distribution, d2: Distribution)->torch.Tensor:
+        return cdf_cdf_E_Lp(d1, d2, bounds, 20, 500, 2)
+    dist2 = MixtureNormal(means, sdevs*0.5)
+    train_distribution(dist2, target_dist, 10000, my_loss2)
 

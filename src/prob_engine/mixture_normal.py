@@ -53,7 +53,7 @@ class MixtureNormal(Distribution):
         yield self._means
         yield self._sdevs
         yield self._weights
-    
+
     @property
     def count(self) -> int:
         return self._weights.numel()
@@ -75,12 +75,12 @@ class MixtureNormal(Distribution):
         if isinstance(d, discrete.Discrete):
             dmatrix = torch.cdist(d._atoms, d._atoms, p=2)
             if dmatrix.max() <= 0:
-                min_distance = torch.tensor(1.0)
+                min_distance = torch.tensor(1.0, device=self._device)
             else:
                 dmatrix = dmatrix + (dmatrix <= 0) * dmatrix.sum()
                 min_distance = dmatrix.min()
-            means = d.atoms
-            sdevs = torch.empty(means.shape)
+            means = d.atoms.to(self._device)
+            sdevs = torch.empty(means.shape, device=self._device)
             sdevs = torch.fill(sdevs, min_distance/3.0)
             self._means = means
             self._sdevs = sdevs
@@ -98,14 +98,14 @@ class MixtureNormal(Distribution):
         batch_shape = means.shape[:-len(self._event_shape)]
         assert means.shape == batch_shape + self._event_shape
         means = means.view((batch_shape.numel(),)+self._event_shape
-                            ).to(dtype=torch.float32, device=self._device)
+                           ).to(dtype=torch.float32, device=self._device)
         sdevs = sdevs.view((batch_shape.numel(),)+self._event_shape
-                            ).to(dtype=torch.float32, device=self._device)
+                           ).to(dtype=torch.float32, device=self._device)
         w_sum = self._weights.abs().sum()
         fill_val = float(w_sum.item())/float(self.count)
         weights = torch.full(size=(batch_shape.numel(),),
-                                fill_value=fill_val,
-                                dtype=torch.float32, device=self._device)
+                             fill_value=fill_val,
+                             dtype=torch.float32, device=self._device)
         self._means = Parameter(torch.cat((self._means, means), 0))
         self._sdevs = Parameter(torch.cat((self._means, sdevs), 0))
         self._weights = Parameter(torch.cat((self._weights, weights), 0))
@@ -129,8 +129,8 @@ class MixtureNormal(Distribution):
         assert sample.shape == batch_shape + self._event_shape
         sample = sample.view(batch_shape + (1, self.event_numel)
                              ).to(device=self._device)
-        flat_means = self._means.view((self.count,self.event_numel))
-        flat_sdevs = self._sdevs.abs().view((self.count,self.event_numel))
+        flat_means = self._means.view((self.count, self.event_numel))
+        flat_sdevs = self._sdevs.abs().view((self.count, self.event_numel))
 
         coeff = torch.tensor(2 * torch.pi, device=self._device)
         coeff = coeff.pow(-self.event_numel/2.0)
@@ -153,8 +153,8 @@ class MixtureNormal(Distribution):
         assert sample.shape == batch_shape + self._event_shape
         sample = sample.view(batch_shape + (1, self.event_numel)
                              ).to(device=self._device)
-        flat_means = self._means.view((self.count,self.event_numel))
-        flat_sdevs = self._sdevs.abs().view((self.count,self.event_numel))
+        flat_means = self._means.view((self.count, self.event_numel))
+        flat_sdevs = self._sdevs.abs().view((self.count, self.event_numel))
 
         sq2 = torch.tensor(2, device=self._device).sqrt()
         arg = sample - flat_means
@@ -164,7 +164,7 @@ class MixtureNormal(Distribution):
         result = (result * self._weights.abs()).sum(-1)
         result *= 1.0/self._weights.sum()
         return result.view(batch_shape)
-    
+
 
 def test():
     from .normal import Normal
@@ -174,8 +174,8 @@ def test():
     n1 = Normal(torch.tensor([-0.5]), torch.tensor([0.25]))
     n2 = Normal(torch.tensor([0.5]), torch.tensor([0.25]))
     mix = Mixture(list((n1, n2)))
-    mixn = MixtureNormal(torch.tensor([[-0.5], [0.5]]), 
-                       torch.tensor([[0.25],[0.25]]))
+    mixn = MixtureNormal(torch.tensor([[-0.5], [0.5]]),
+                         torch.tensor([[0.25], [0.25]]))
     mixn.initialize_weights(mix._weights)
 
     mix.plot_exact_pdf()
@@ -190,8 +190,8 @@ def test():
                  torch.tensor([0.15, 0.25]))
     mix2 = Mixture(list((nn1, nn2)))
     mixn2 = MixtureNormal(
-        torch.tensor([[-0.5,-0.5],[0.5,0.5]]),
-        torch.tensor([[0.25,0.15],[0.15,0.25]]))
+        torch.tensor([[-0.5, -0.5], [0.5, 0.5]]),
+        torch.tensor([[0.25, 0.15], [0.15, 0.25]]))
     mixn2.initialize_weights(mix2._weights)
 
     mix2.plot_exact_pdf()
@@ -200,8 +200,9 @@ def test():
     mixn2.plot_exact_cdf()
     print(mixn2.sample(torch.Size((2, 3))))
 
-    disc = Discrete(torch.tensor([[-0.6,-0.2],[-0.3,-0.7],[0.1,0.1],[0.2,0.8]]))
-    discN = MixtureNormal(torch.tensor([[0,0]]), torch.tensor([[1.0,1.0]]))
+    disc = Discrete(torch.tensor(
+        [[-0.6, -0.2], [-0.3, -0.7], [0.1, 0.1], [0.2, 0.8]]))
+    discN = MixtureNormal(torch.tensor([[0, 0]]), torch.tensor([[1.0, 1.0]]))
     discN.plot_exact_pdf()
     discN.plot_exact_cdf()
     discN.initialize_from_distribution(disc)

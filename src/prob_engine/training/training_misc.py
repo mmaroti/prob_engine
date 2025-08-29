@@ -20,7 +20,7 @@ from prob_engine.distribution import Distribution
 from prob_engine.uniform_grid import UniformGrid
 import time
 
-def multilinspace(start: torch.Tensor, 
+def multilinspace_old(start: torch.Tensor, 
                   end: torch.Tensor,
                   steps: int) -> torch.Tensor:
     """
@@ -30,6 +30,7 @@ def multilinspace(start: torch.Tensor,
     assert start.shape == end.shape
     flat_start = start.flatten()
     flat_end = end.flatten()
+    arrays = []
     for i in range(0,start.numel()):
         arrays += [torch.linspace(flat_start[i], flat_end[i], steps)]
     return torch.cartesian_prod(*arrays)
@@ -41,8 +42,7 @@ def multilinspace(start: torch.Tensor,
     Generates points from multi dimensional rectangle [start, end],
     the i-th axis being split into 'steps[i-1]' many sections.
     """
-    assert start.shape == end.shape
-    assert steps.numel() == start.numel()
+    assert start.shape == end.shape and steps.shape == start.shape
     flat_start = start.flatten()
     flat_end = end.flatten()
     flat_steps = steps.flatten()
@@ -148,12 +148,13 @@ def train_distribution(
         if step % 100 == 0:
             end = time.time()
             print("step:", step, "error:", error.detach().cpu().item(), "time since last print", end-start, "sec")
-            start = time.time()
+            start = end
+            error_tracker.append(error.item())
         if step % 1000 == 0:
             dist.plot_exact_cdf()
+            dist.plot_exact_pdf()
         error.backward()
         opt.step()
-        error_tracker.append(error.item())
     animate_datalist(error_tracker)
 
 def animate_datalist(data: list):
