@@ -94,15 +94,17 @@ class PosPolynomLayer(torch.nn.Module):
         #TODO check that this structure interacts nicely with module.parameters
         self.bias = torch.nn.Parameter(
             torch.empty((size_out,), device=device, dtype=torch.float32))
+        combination_counts = [int(comb(size_in+i-1, i, exact = True)) 
+                              for i in range(1, self.degree+1)]
         self.weights = [torch.nn.Parameter(
-                        torch.empty( [size_out] + ([size_in] * i),
-                        device=device, dtype=torch.float32) )
-                        for i in range(1, degree+1)]
-        self.reset_parameters()
+                        torch.empty( (size_out, c),
+                            device=device, dtype=torch.float32) )
+                        for c in combination_counts]
         for i, w in enumerate(self.weights):
             name = "weight_"+str(i+1)
             self.register_parameter(name, w)
         #self.register_parameter("bias", self.bias)
+        self.reset_parameters()
 
     def reset_parameters(self):
         bound = 1.0 / math.sqrt(self.size_in)
@@ -110,63 +112,23 @@ class PosPolynomLayer(torch.nn.Module):
             for w in self.weights:
                 torch.nn.init.uniform_(w, 0, bound)
         torch.nn.init.uniform_(self.bias, -bound, bound)
-        #TODO: Is positivity of matrix entries enough, or should matrix be positive definite?
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         assert input.shape[-1] == self.size_in
-        if self.size_in == 1:
-            points = input.view((input.numel(),))
-            result = torch.zeros(input.shape + (self.size_out,),
-                                 dtype=torch.float32,
-                                 device=self.bias.device)
-            result = torch.add(result, self.bias.flatten())
-            for i, w in enumerate(self.weights):
-                result = torch.add(result, torch.mul(w.flatten().abs(), points.pow(i+1)))
-            result = result.view(input.shape[:-1] + (self.size_out,))
-        elif input.dim() == 1:        #a single input
-            result = torch.zeros((self.size_out,),
-                                 dtype=torch.float32,
-                                 device=self.bias.device)
-            result = torch.add(result, self.bias)
-            for w in self.weights:
-                if w.dim() == 2:
-                    result = torch.add(result, torch.einsum(w.abs(), [0,1], input, [1], [0]))
-                else:
-                    temp = w.abs()
-                    for i in range(1, w.dim()):
-                        if temp.dim() > 2:
-                            temp = torch.einsum(temp, [...,0,1], [...,1,0])
-                            temp = torch.einsum(temp, [0,...,1], input, [1], [0,...])
-                        else:
-                            temp = torch.einsum(temp, [0,1], input, [1], [0])
-                    result = torch.add(result, temp)
-        else:                       #batch of inputs
-            points = input.view((input.shape[:-1].numel(),input.shape[-1]))
-            result = torch.zeros((input.shape[0],self.size_out),
-                                 dtype=torch.float32,
-                                 device=self.bias.device)
-            result = torch.add(result, self.bias)
-            for w in self.weights:
-                if w.dim() == 2:
-                    result = torch.add(result, torch.einsum(w.abs(), [0,1], points, [2,1], [2,0]))
-                else:
-                    temp = w.abs()
-                    for i in range(1, w.dim()):
-                        if i == 1:  #add extra (batch) dimension to weights
-                            if temp.dim() > 2:
-                                temp = torch.einsum(temp, [...,0,1], [...,1,0])
-                                temp = torch.einsum(temp, [0,...,1], points, [2,1], [2,0,...])
-                            else:
-                                temp = torch.einsum(temp, [0,1], points, [2,1], [2,0])
-                        else:
-                            if temp.dim() > 3:
-                                temp = torch.einsum(temp, [...,0,1], [...,1,0])
-                                temp = torch.einsum(temp, [2,0,...,1], points, [2,1], [2,0,...])
-                            else:
-                                temp = torch.einsum(temp, [2,0,1], points, [2,1], [2,0])
-                    result = torch.add(result, temp)
-            result = result.view(input.shape[:-1] + (self.size_out,))
-        return result
+        batch_shape = input.shape[:-1]
+        input = input.view((batch_shape.numel(),input.shape[-1]))
+        result = torch.zeros((input.shape[0],1),
+                             dtype=torch.float32,
+                             device=self.bias.device)
+        result = torch.add(result, self.bias)
+        for i, w in enumerate(self.weights):
+            combos = torch.combinations(
+                torch.arange(0, self.size_in),
+                r = i+1, with_replacement=True)
+            temp = input[:,combos].prod(-1).unsqueeze(-2)
+            temp = torch.mul(w,temp)
+            result = torch.add(result, temp.sum(-1))
+        return result.view(batch_shape + (self.size_out,))
 
 class MinMaxLayer(torch.nn.Module):
     def __init__(self):
