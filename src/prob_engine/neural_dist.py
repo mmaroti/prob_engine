@@ -122,12 +122,13 @@ class PosPolynomLayer(torch.nn.Module):
                              device=self.bias.device)
         result = torch.add(result, self.bias)
         for i, w in enumerate(self.weights):
+            #could use torch.outer or torch.einsum in for loop
             combos = torch.combinations(
                 torch.arange(0, self.size_in),
                 r = i+1, with_replacement=True)
             temp = input[:,combos].prod(-1).unsqueeze(-2)
-            temp = torch.mul(w,temp)
-            result = torch.add(result, temp.sum(-1))
+            temp = torch.mul(w.abs(),temp).sum(-1)
+            result = torch.add(result, temp)
         return result.view(batch_shape + (self.size_out,))
 
 class MinMaxLayer(torch.nn.Module):
