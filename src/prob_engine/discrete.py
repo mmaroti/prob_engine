@@ -26,34 +26,12 @@ class Discrete(Distribution):
                  device: Optional[str] = None):
         assert points.dim() > 1 and points.shape[0] > 0
 
-        Distribution.__init__(self, points.shape[1:], device=device)
+        Distribution.__init__(self, points.shape[-1], device=device)
         self._atoms = Parameter(
             points.to(dtype=torch.float32, device=self._device))
-        self._weights = Parameter(torch.rand(size=[self._atoms.shape[0]],
-                                             dtype=torch.float32, device=self._device))
-
-    @property
-    def atom_num(self) -> int:
-        return self._atoms.shape[0]
-
-    @property
-    def bounds(self) -> torch.Tensor:
-        shaped_atoms = self._atoms.view((self.atom_num, self.event_numel))
-        mins = torch.min(shaped_atoms, 0).values.view(self.event_shape)
-        maxs = torch.max(shaped_atoms, 0).values.view(self.event_shape)
-        return torch.stack((mins, maxs), 0)
-
-    @property
-    def min_bound(self) -> torch.Tensor:
-        shaped_atoms = self._atoms.view((self.atom_num, self.event_numel))
-        mins = torch.min(shaped_atoms, 0).values.view(self.event_shape)
-        return mins
-
-    @property
-    def max_bound(self) -> torch.Tensor:
-        shaped_atoms = self._atoms.view((self.atom_num, self.event_numel))
-        maxs = torch.max(shaped_atoms, 0).values.view(self.event_shape)
-        return maxs
+        self._weights = Parameter(
+            torch.rand(size=[self._atoms.shape[0]],
+                       dtype=torch.float32, device=self._device))
 
     @property
     def atoms(self) -> torch.Tensor:
@@ -67,18 +45,40 @@ class Discrete(Distribution):
     def parameters(self) -> Iterator[Parameter]:
         yield self._weights
 
+    @property
+    def atom_num(self) -> int:
+        return self._atoms.shape[:-1].numel()
+
+    @property
+    def bounds(self) -> torch.Tensor:
+        shaped_atoms = self._atoms.view((self.atom_num, self._event_size))
+        mins = torch.min(shaped_atoms, 0).values.view(self.event_shape)
+        maxs = torch.max(shaped_atoms, 0).values.view(self.event_shape)
+        return torch.stack((mins, maxs), 0)
+
+    @property
+    def min_bound(self) -> torch.Tensor:
+        shaped_atoms = self._atoms.view((self.atom_num, self._event_size))
+        mins = torch.min(shaped_atoms, 0).values.view(self.event_shape)
+        return mins
+
+    @property
+    def max_bound(self) -> torch.Tensor:
+        shaped_atoms = self._atoms.view((self.atom_num, self._event_size))
+        maxs = torch.max(shaped_atoms, 0).values.view(self.event_shape)
+        return maxs
+
     def reset_weights(self):
         weights = torch.rand(self._weights.shape,
                              dtype=torch.float32, device=self._device)
         self._weights = Parameter(weights)
 
     def initialize_points(self, atoms: torch.Tensor):
-        batch_shape = atoms.shape[-len(self._event_shape):]
-        assert atoms.shape == batch_shape + self._event_shape
-        atoms = atoms.view((batch_shape.numel(),) + self._event_shape
-                           ).to(dtype=torch.float32,
-                                device=self._device)
-        weights = torch.rand(size=[atoms.shape[0]],
+        batch_shape = atoms.shape[:-1]
+        assert atoms.shape == batch_shape + self.event_shape
+        atoms = atoms.view((batch_shape.numel(),self._event_size)
+                           ).to(dtype=torch.float32, device=self._device)
+        weights = torch.rand(size=(batch_shape.numel(),),
                              dtype=torch.float32, device=self._device)
         self._atoms = Parameter(atoms)
         self._weights = Parameter(weights)
@@ -91,11 +91,11 @@ class Discrete(Distribution):
         self._weights = Parameter(weights)
 
     def initialize(self, atoms: torch.Tensor, weights: torch.Tensor):
-        batch_shape = atoms.shape[-len(self._event_shape):]
-        assert atoms.shape == batch_shape + self._event_shape
+        batch_shape = atoms.shape[:-1]
+        assert atoms.shape == batch_shape + self.event_shape
         assert weights.numel() == batch_shape.numel()
         assert weights.count_nonzero() > 0
-        atoms = atoms.view((batch_shape.numel(),) + self._event_shape
+        atoms = atoms.view((batch_shape.numel(),self._event_size)
                            ).to(dtype=torch.float32,
                                 device=self._device)
         weights = weights.view((batch_shape.numel(),)).to(
@@ -104,7 +104,23 @@ class Discrete(Distribution):
         self._weights = Parameter(weights)
 
     def add_atoms(self, new_atoms: torch.Tensor):
-        raise NotImplementedError()
+        batch_shape = new_atoms.shape[:-1]
+        assert new_atoms.shape == batch_shape + self.event_shape
+        new_atoms = new_atoms.view((batch_shape.numel(),self._event_size))
+        atoms = torch.cat(
+            (self._atoms.view((batch_shape.numel(), self._event_size)),
+            new_atoms), 0)
+        w_sum = self._weights.abs().sum()
+        fill_val = float(w_sum.item())/float(self.atom_num)
+        new_weights = torch.full(size=(batch_shape.numel(),),
+                             fill_value=fill_val,
+                             dtype=torch.float32, device=self._device)
+        weights = torch.cat(
+            (self._weights.view((batch_shape.numel(),)),
+             new_weights), 0)
+        assert atoms.shape == weights.shape + self.event_shape
+        self._atoms = Parameter(atoms)
+        self._weights = Parameter(weights)
 
     def delete_atoms(self, delete_points: torch.Tensor):
         raise NotImplementedError()
@@ -115,15 +131,15 @@ class Discrete(Distribution):
             batch_shape.numel(),
             replacement=True)
         selected = self._atoms[selection].to(device=self._device)
-        return selected.view(batch_shape + self._event_shape)
+        return selected.view(batch_shape + self.event_shape)
 
     def get_cdf(self, sample: torch.Tensor) -> torch.Tensor:
-        batch_shape = sample.shape[:-len(self._event_shape)]
-        assert sample.shape == batch_shape + self._event_shape
-        sample = sample.view((batch_shape.numel(), 1, self.event_numel)
+        batch_shape = sample.shape[:-1]
+        assert sample.shape == batch_shape + self.event_shape
+        sample = sample.view((batch_shape.numel(), 1, self._event_size)
                              ).to(dtype=torch.float32, device=self._device)
         atoms = self._atoms.view(
-            torch.Size((self.atom_num, self.event_numel)))
+            torch.Size((self.atom_num, self._event_size)))
         result = (atoms <= sample).all(-1).to(dtype=torch.float32)
         w = self._weights.abs()
         w *= 1.0/w.sum()

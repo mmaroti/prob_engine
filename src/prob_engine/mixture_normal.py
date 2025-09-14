@@ -28,13 +28,14 @@ class MixtureNormal(Distribution):
         assert means.dim() > 1
         assert means.shape == sdevs.shape
 
-        Distribution.__init__(self, means.shape[1:], device=device)
+        Distribution.__init__(self, means.shape[-1], device=device)
         self._means = Parameter(
             means.to(dtype=torch.float32, device=self._device))
         self._sdevs = Parameter(
             sdevs.to(dtype=torch.float32, device=self._device))
         self._weights = Parameter(torch.rand(
-            size=(means.shape[0],), dtype=torch.float32, device=self._device))
+            size=(means.shape[:-1].numel(),),
+            dtype=torch.float32, device=self._device))
 
     @property
     def means(self) -> torch.Tensor:
@@ -80,26 +81,26 @@ class MixtureNormal(Distribution):
                 dmatrix = dmatrix + (dmatrix <= 0) * dmatrix.sum()
                 min_distance = dmatrix.min()
             means = d.atoms.to(self._device)
-            sdevs = torch.empty(means.shape, device=self._device)
-            sdevs = torch.fill(sdevs, min_distance/3.0)
-            self._means = means
-            self._sdevs = sdevs
-            self._weights = d._weights
+            sdevs = torch.full(means.shape, min_distance/3.0,
+                               dtype = torch.float32, device=self._device)
+            self._means = Parameter(means)
+            self._sdevs = Parameter(sdevs)
+            self._weights = Parameter(d._weights)
         else:
             raise NotImplementedError()
 
     def add_normals(self, means: torch.Tensor, sdevs: torch.Tensor):
         assert means.shape == sdevs.shape
-        if means.shape == self._event_shape:
-            means = means.view((1,) + self._event_shape).to(
+        if means.shape == self.event_shape:
+            means = means.view((1,) + self.event_shape).to(
                 dtype=torch.float32, device=self._device)
-            sdevs = sdevs.view((1,) + self._event_shape).to(
+            sdevs = sdevs.view((1,) + self.event_shape).to(
                 dtype=torch.float32, device=self._device)
-        batch_shape = means.shape[:-len(self._event_shape)]
-        assert means.shape == batch_shape + self._event_shape
-        means = means.view((batch_shape.numel(),)+self._event_shape
+        batch_shape = means.shape[:-1]
+        assert means.shape == batch_shape + self.event_shape
+        means = means.view((batch_shape.numel(),)+self.event_shape
                            ).to(dtype=torch.float32, device=self._device)
-        sdevs = sdevs.view((batch_shape.numel(),)+self._event_shape
+        sdevs = sdevs.view((batch_shape.numel(),)+self.event_shape
                            ).to(dtype=torch.float32, device=self._device)
         w_sum = self._weights.abs().sum()
         fill_val = float(w_sum.item())/float(self.count)
@@ -116,24 +117,24 @@ class MixtureNormal(Distribution):
             batch_shape.numel(),
             replacement=True).view(batch_shape)
         standard = torch.normal(0.0, 1.0,
-                                size=batch_shape + (self.event_numel, ),
+                                size=batch_shape + (self._event_size, ),
                                 device=self._device
-                                ).view(batch_shape + self._event_shape)
+                                ).view(batch_shape + self.event_shape)
         result = self._means[selection] + \
             standard * self._sdevs.abs()[selection]
         return result
 
     def get_pdf(self, sample: torch.Tensor) -> torch.Tensor:
         assert (self._sdevs.abs() > 0).all()
-        batch_shape = sample.shape[:-len(self._event_shape)]
-        assert sample.shape == batch_shape + self._event_shape
-        sample = sample.view(batch_shape + (1, self.event_numel)
+        batch_shape = sample.shape[:-1]
+        assert sample.shape == batch_shape + self.event_shape
+        sample = sample.view(batch_shape + (1, self._event_size)
                              ).to(device=self._device)
-        flat_means = self._means.view((self.count, self.event_numel))
-        flat_sdevs = self._sdevs.abs().view((self.count, self.event_numel))
+        flat_means = self._means.view((self.count, self._event_size))
+        flat_sdevs = self._sdevs.abs().view((self.count, self._event_size))
 
         coeff = torch.tensor(2 * torch.pi, device=self._device)
-        coeff = coeff.pow(-self.event_numel/2.0)
+        coeff = coeff.pow(-self._event_size/2.0)
         sqrdet = flat_sdevs.prod(-1)
         exparg = sample - flat_means
         exparg = exparg.pow(2) / flat_sdevs.pow(2)
@@ -149,12 +150,12 @@ class MixtureNormal(Distribution):
 
     def get_cdf(self, sample: torch.Tensor) -> torch.Tensor:
         assert (self._sdevs.abs() > 0).all()
-        batch_shape = sample.shape[:-len(self._event_shape)]
-        assert sample.shape == batch_shape + self._event_shape
-        sample = sample.view(batch_shape + (1, self.event_numel)
+        batch_shape = sample.shape[:-1]
+        assert sample.shape == batch_shape + self.event_shape
+        sample = sample.view(batch_shape + (1, self._event_size)
                              ).to(device=self._device)
-        flat_means = self._means.view((self.count, self.event_numel))
-        flat_sdevs = self._sdevs.abs().view((self.count, self.event_numel))
+        flat_means = self._means.view((self.count, self._event_size))
+        flat_sdevs = self._sdevs.abs().view((self.count, self._event_size))
 
         sq2 = torch.tensor(2, device=self._device).sqrt()
         arg = sample - flat_means

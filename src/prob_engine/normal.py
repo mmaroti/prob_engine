@@ -24,9 +24,12 @@ class Normal(Distribution):
                  means: torch.Tensor,
                  sdevs: torch.Tensor,
                  device: Optional[str] = None):
+        assert means.dim() == 1
+        means = torch.flatten(means)
+        sdevs = torch.flatten(sdevs)
         assert means.shape == sdevs.shape
 
-        Distribution.__init__(self, means.shape, device=device)
+        Distribution.__init__(self, means.shape[0], device=device)
         self._means = torch.nn.Parameter(
             means.to(dtype=torch.float32, device=self._device))
         self._sdevs = torch.nn.Parameter(
@@ -47,24 +50,24 @@ class Normal(Distribution):
 
     def sample(self, batch_shape: torch.Size = torch.Size()) -> torch.Tensor:
         standard = torch.normal(0.0, 1.0,
-                                size=batch_shape + (self.event_numel, ),
+                                size=batch_shape + (self._event_size, ),
                                 device=self._device
-                                ).view(batch_shape + self._event_shape)
+                                ).view(batch_shape + self.event_shape)
         result = self._means + standard * self._sdevs.abs()
         return result
 
     def get_pdf(self, sample: torch.Tensor) -> torch.Tensor:
         assert (self._sdevs.abs() > 0).all()
         # Could implement as sdev_i=0 meaning that i-th coordinate is fixed
-        batch_shape = sample.shape[:-len(self._event_shape)]
-        assert sample.shape == batch_shape + self._event_shape
-        sample = sample.view(batch_shape + (self.event_numel, )
+        batch_shape = sample.shape[:-1]
+        assert sample.shape == batch_shape + self.event_shape
+        sample = sample.view(batch_shape + (self._event_size, )
                              ).to(device=self._device)
         flat_means = self._means.flatten()
         flat_sdevs = self._sdevs.abs().flatten()
 
         coeff = torch.tensor(2 * torch.pi, device=self._device)
-        coeff = coeff.pow(-self.event_numel/2.0)
+        coeff = coeff.pow(-self._event_size/2.0)
         sqrdet = flat_sdevs.prod()
         exparg = sample - flat_means
         exparg = exparg.pow(2) / flat_sdevs.pow(2)
@@ -74,9 +77,9 @@ class Normal(Distribution):
     def log_prob(self, sample: torch.Tensor) -> torch.Tensor:
         assert (self._sdevs.abs() > 0).all()
         # Could implement as sdev_i=0 meaning that i-th coordinate is fixed
-        batch_shape = sample.shape[:-len(self._event_shape)]
-        assert sample.shape == batch_shape + self._event_shape
-        sample = sample.view(batch_shape + (self.event_numel, )
+        batch_shape = sample.shape[:-1]
+        assert sample.shape == batch_shape + self.event_shape
+        sample = sample.view(batch_shape + (self._event_size, )
                              ).to(device=self._device)
         flat_means = self._means.flatten()
         flat_sdevs = self._sdevs.abs().flatten()
@@ -86,16 +89,16 @@ class Normal(Distribution):
         exparg = sample - flat_means
         exparg = exparg.pow(2) / flat_sdevs.pow(2)
         exparg = -0.5 * exparg.sum(-1)
-        result = - self.event_numel * coeff.log() / 2.0 \
+        result = - self._event_size * coeff.log() / 2.0 \
             - sqrdetlog + exparg
         return result
 
     def get_cdf(self, sample: torch.Tensor) -> torch.Tensor:
         assert (self._sdevs.abs() > 0).all()
         # Could implement as sdev_i=0 meaning that i-th coordinate is fixed
-        batch_shape = sample.shape[:-len(self._event_shape)]
-        assert sample.shape == batch_shape + self._event_shape
-        sample = sample.view(batch_shape + (self.event_numel, )
+        batch_shape = sample.shape[:-1]
+        assert sample.shape == batch_shape + self.event_shape
+        sample = sample.view(batch_shape + (self._event_size, )
                              ).to(device=self._device)
         flat_means = self._means.flatten()
         flat_sdevs = self._sdevs.abs().flatten()

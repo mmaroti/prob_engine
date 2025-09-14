@@ -25,11 +25,12 @@ class UniformGrid(Distribution):
                  bounds: torch.Tensor,
                  counts: torch.Tensor,
                  device: Optional[str] = None):
-        assert bounds.shape[0] == 2 and bounds.shape[1:] == counts.shape
+        assert counts.dim() == 1
+        assert bounds.shape == (2, ) + counts.shape
         assert torch.all(bounds[0] < bounds[1]).item() \
             and torch.all(counts >= 1).item()
 
-        Distribution.__init__(self, counts.shape, device=device)
+        Distribution.__init__(self, counts.shape[-1], device=device)
         self._bounds = bounds.to(dtype=torch.float32, device=self._device)
         self._counts = counts.to(dtype=torch.int32, device=self._device)
         self._cell_size = (self._bounds[1] - self._bounds[0]) / self._counts
@@ -76,14 +77,11 @@ class UniformGrid(Distribution):
         """
         Returns pairs of lower and upper bounds for all grid cells.
         """
-        event_dims = len(self._event_shape)
-        centers = self.centers().unsqueeze(-event_dims-1)
-        half_size = self._cell_size.unsqueeze(-event_dims-1)/2
+        centers = self.centers().unsqueeze(-2)
+        half_size = self._cell_size.unsqueeze(-2)/2
         cell_bounds = torch.cat(
-            [centers - half_size, centers + half_size],
-            dim=-event_dims-1)
-        assert cell_bounds.shape == self._parameter.shape \
-            + (2,) + self._event_shape
+            [centers - half_size, centers + half_size], dim=-2)
+        assert cell_bounds.shape == self._parameter.shape + (2,1)
         return cell_bounds
 
     def initialize(self, pdf: Callable[[torch.Tensor], float]):
@@ -93,8 +91,7 @@ class UniformGrid(Distribution):
         then sets parameters to approximate result.
         """
         centers = self.centers()
-        centers = centers.reshape(
-            (self._parameter.numel(), ) + self.event_shape)
+        centers = centers.reshape( (self._parameter.numel(), 1))
         pdfvals = torch.tensor([pdf(c) for c in centers],
                                dtype=torch.float32, device=self._device)
         self._parameter = Parameter(pdfvals.view(self._parameter.shape))
@@ -113,7 +110,7 @@ class UniformGrid(Distribution):
         Evaluates get_pdf function of target distribution,
         then sets parameters to approximate the result.
         """
-        assert target._event_shape == self._event_shape
+        assert target.event_shape == self.event_shape
         centers = self.centers().to(device=target._device)
         pdf = target.get_pdf(centers).to(device=self._device)
         self._parameter = Parameter(pdf.view(self._parameter.shape))
@@ -123,7 +120,7 @@ class UniformGrid(Distribution):
         Calculates the probability mass assigned to grid cells
         by target distribution, then sets parameters to approximate the result.
         """
-        assert target._event_shape == self._event_shape
+        assert target.event_shape == self.event_shape
         bounds = self.cell_bounds().to(device=target._device)
         probs = target.get_rectangle_prob(bounds).to(device=self._device)
         self._parameter = Parameter(probs.view(self._parameter.shape))
@@ -134,11 +131,11 @@ class UniformGrid(Distribution):
         of underlying distribution falling into [a,b) grid cells,
         then sets parameters based on results.
         """
-        batch_shape = sample.shape[:len(sample.shape) - len(self._event_shape)]
-        assert sample.shape == batch_shape + self._event_shape
-        sample = sample.view((batch_shape.numel(), self.event_numel)
+        batch_shape = sample.shape[:-1]
+        assert sample.shape == batch_shape + self.event_shape
+        sample = sample.view((batch_shape.numel(), self._event_size)
                              ).to(dtype=torch.float32, device=self._device)
-        centers = self.centers().view(self._parameter.shape + (self.event_numel, ))
+        centers = self.centers().view(self._parameter.shape + (self._event_size, ))
         half_cell_size = self._cell_size.flatten()/2
         cell_lower_bounds = (centers - half_cell_size).unsqueeze(-2)
         cell_upper_bounds = (centers + half_cell_size).unsqueeze(-2)
@@ -154,7 +151,7 @@ class UniformGrid(Distribution):
         approximates probabilities of samples falling within grid cells,
         then sets parameters based on results.
         """
-        assert self._event_shape == target._event_shape
+        assert self.event_shape == target.event_shape
         bounds = self.cell_bounds().to(device=target._device)
         probs = target.get_empirical_prob_rectangle(count, bounds)
         self._parameter = Parameter(probs.to(
@@ -167,14 +164,14 @@ class UniformGrid(Distribution):
             replacement=True)
 
         flat_coords = torch.empty(
-            (batch_shape.numel(), self.event_numel),
+            (batch_shape.numel(), self._event_size),
             dtype=torch.long, device=self._device)
 
         for i, d in enumerate(reversed(self._parameter.shape)):
             flat_coords[:, -1 - i] = flat_indices % d
             flat_indices //= d
 
-        coords = flat_coords.view(batch_shape + self._event_shape).float()
+        coords = flat_coords.view(batch_shape + self.event_shape).float()
         coords += torch.rand(coords.shape,
                              dtype=torch.float32, device=self._device)
 
@@ -182,12 +179,12 @@ class UniformGrid(Distribution):
         return values
 
     def get_pdf(self, sample: torch.Tensor) -> torch.Tensor:
-        batch_shape = sample.shape[:len(sample.shape) - len(self._event_shape)]
-        assert sample.shape == batch_shape + self._event_shape
+        batch_shape = sample.shape[:-1]
+        assert sample.shape == batch_shape + self.event_shape
 
         sample = sample.to(dtype=torch.float32, device=self._device)
         flat_sample = sample.view(torch.Size(
-            [batch_shape.numel(), self.event_numel]))
+            [batch_shape.numel(), self._event_size]))
 
         flat_coords = ((flat_sample - self.min_bounds.flatten()) /
                        self._cell_size.flatten()).floor().long()
@@ -222,23 +219,23 @@ class UniformGrid(Distribution):
         return torch.log(self.get_pdf(sample))
 
     def get_cdf(self, sample: torch.Tensor) -> torch.Tensor:
-        batch_shape = sample.shape[:-len(self._event_shape)]
-        assert sample.shape == batch_shape + self._event_shape
+        batch_shape = sample.shape[:-1]
+        assert sample.shape == batch_shape + self.event_shape
         sample = sample.to(dtype=torch.float32, device=self._device)
-        flat_sample = sample.view((batch_shape.numel(), self.event_numel))
+        flat_sample = sample.view((batch_shape.numel(), self._event_size))
 
         flat_params = self._parameter.flatten().abs()
         flat_params *= 1.0 / flat_params.sum()
 
         flat_centers = self.centers().view(
-            (flat_params.numel(), self.event_numel))
+            (flat_params.numel(), self._event_size))
         cell_lower_corners = flat_centers - 0.5 * self._cell_size.flatten()
 
         # excess shape: [batch_shape.numel(), flat_params.numel(), event_shape.numel()]
         excess = (flat_sample.unsqueeze(1) - cell_lower_corners).relu()
         volume = torch.minimum(excess,
                                self._cell_size.view(
-                                   (1, self.event_numel)
+                                   (1, self._event_size)
                                )).prod(-1)
         prob = volume * ((1.0 / self._cell_volume) * flat_params)
         return prob.sum(-1).view(batch_shape)

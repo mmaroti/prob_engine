@@ -24,9 +24,11 @@ class UniformBall(Distribution):
                  center: torch.Tensor,
                  radius: torch.Tensor,
                  device: Optional[str] = None):
-
-        assert radius.numel() == 1
-        Distribution.__init__(self, center.shape, device=device)
+        
+        assert center.dim() == 1 and radius.numel() == 1
+        center = center.flatten()
+        radius = radius.flatten()
+        Distribution.__init__(self, center.shape[-1], device=device)
         self._center = torch.nn.Parameter(
             center.to(dtype=torch.float32, device=self._device))
         self._radius = torch.nn.Parameter(radius.abs().flatten().to(
@@ -46,34 +48,34 @@ class UniformBall(Distribution):
         yield self._radius
 
     def measure(self) -> torch.Tensor:
-        if self.event_numel == 1:
+        if self._event_size == 1:
             return self._radius.abs() * 2
-        elif self.event_numel == 2:
+        elif self._event_size == 2:
             return self._radius.pow(2) * torch.pi
-        elif self.event_numel == 3:
+        elif self._event_size == 3:
             return self._radius.abs().pow(3) * 3 * torch.pi / 4
         else:
             c1 = torch.tensor(torch.pi, device=self._device
-                              ).pow(self.event_numel/2.0)
-            c2 = torch.tensor(1.0 + self.event_numel/2.0,
+                              ).pow(self._event_size/2.0)
+            c2 = torch.tensor(1.0 + self._event_size/2.0,
                               device=self._device).lgamma().exp()
-            return self._radius.abs().pow(self.event_numel) * c1 / c2
+            return self._radius.abs().pow(self._event_size) * c1 / c2
 
     def sample(self, batch_shape: torch.Size = torch.Size()) -> torch.Tensor:
         directions = torch.normal(mean=0.0, std=1.0,
-                                  size=batch_shape + (self.event_numel,),
+                                  size=batch_shape + (self._event_size,),
                                   device=self._device)
         directions /= directions.pow(2).sum(-1).sqrt().unsqueeze(-1)
         rad = torch.rand(size=batch_shape, device=self._device
-                         ).pow(1.0/self.event_numel) * self._radius.abs()
+                         ).pow(1.0/self._event_size) * self._radius.abs()
         return self._center + (directions * rad.unsqueeze(-1)
-                               ).view(batch_shape + self._event_shape)
+                               ).view(batch_shape + self.event_shape)
 
     def get_pdf(self, sample: torch.Tensor) -> torch.Tensor:
         assert (0 < self._radius.abs()).all(), "No density function exists!"
-        batch_shape = sample.shape[:-len(self._event_shape)]
-        assert sample.shape == batch_shape + self._event_shape
-        sample = sample.view(batch_shape + (self.event_numel,)
+        batch_shape = sample.shape[:-1]
+        assert sample.shape == batch_shape + self.event_shape
+        sample = sample.view(batch_shape + (self._event_size,)
                              ).to(device=self._device)
         inside = (sample - self._center.flatten()
                   ).pow(2).sum(-1) <= self._radius.pow(2)
@@ -83,24 +85,24 @@ class UniformBall(Distribution):
         return torch.log(self.get_pdf(sample))
 
     def get_cdf(self, sample: torch.Tensor) -> torch.Tensor:
-        batch_shape = sample.shape[:-len(self._event_shape)]
-        assert sample.shape == batch_shape + self._event_shape
+        batch_shape = sample.shape[:-1]
+        assert sample.shape == batch_shape + self.event_shape
         sample = sample.to(device=self._device)
         if (self._radius.item() == 0):
             probs = (sample >= self._center).view(
-                batch_shape + (self.event_numel, )
+                batch_shape + (self._event_size, )
             ).all(-1)
             return probs
         else:
-            if self.event_numel == 1:
+            if self._event_size == 1:
                 probs = torch.minimum(
                     (sample - self._center + self._radius.abs()).relu()
                     / self.measure(),
                     torch.tensor(1.0, device=self._device))
                 return probs.view(batch_shape)
 
-            elif self.event_numel == 2:
-                sam = sample.view((batch_shape.numel(), self.event_numel))
+            elif self._event_size == 2:
+                sam = sample.view((batch_shape.numel(), self._event_size))
                 cen = self._center.flatten()
                 rad = self._radius.abs().flatten()
                 """If the point is outside the circle in first quadrant,

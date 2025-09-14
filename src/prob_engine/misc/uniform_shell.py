@@ -25,9 +25,11 @@ class UniformShell(Distribution):
                  radius2: torch.Tensor,
                  device: Optional[str] = None):
         
+        assert center.dim() == 1
         assert radius1.numel() == 1 and radius2.numel() == 1
-        assert torch.logical_and( radius1 >= 0, radius2 >= 0 ).all()
-        Distribution.__init__(self, center.shape, device=device)
+        center = center.flatten()
+        assert radius1.flatten().item() >= 0 and radius2.flatten().item() >= 0
+        Distribution.__init__(self, center.shape[-1], device=device)
         self._center = center.to(dtype=torch.float32, device=self._device)
         self._radius1 = radius1.flatten().to(dtype=torch.float32, device=self._device)
         self._radius2 = radius2.flatten().to(dtype=torch.float32, device=self._device)
@@ -51,48 +53,48 @@ class UniformShell(Distribution):
         yield self._radius2
 
     def measure(self) -> torch.Tensor:
-        if self.event_numel == 1:
+        if self._event_size == 1:
             diff = self._radius2.abs() - self._radius1.abs()
             return diff.abs() * 2
-        elif self.event_numel == 2:
+        elif self._event_size == 2:
             diff = self._radius2.abs().pow(2) \
                     - self._radius1.abs().pow(2)
             return diff.abs() * torch.pi
-        elif self.event_numel == 3:
+        elif self._event_size == 3:
             diff = self._radius2.abs().pow(3) \
                     - self._radius1.abs().pow(3)
             return diff.abs() * 3 * torch.pi / 4
         else: 
-            diff = self._radius1.abs().pow(self.event_numel) \
-                    - self._radius2.abs().pow(self.event_numel)
+            diff = self._radius1.abs().pow(self._event_size) \
+                    - self._radius2.abs().pow(self._event_size)
             c1 = torch.tensor( torch.pi, device=self._device
-                              ).pow(self.event_numel/2.0)
-            c2 = torch.tensor( 1.0 + self.event_numel/2.0,
+                              ).pow(self._event_size/2.0)
+            c2 = torch.tensor( 1.0 + self._event_size/2.0,
                               device=self._device ).lgamma().exp()
             return diff.abs() * c1 / c2
 
     def sample(self, batch_shape: torch.Size = torch.Size()) -> torch.Tensor:
         directions = torch.normal( 0.0, 1.0,
-                                  size = batch_shape + (self.event_numel, ),
+                                  size = batch_shape + (self._event_size, ),
                                   device = self._device )
         directions /= directions.pow(2).sum(-1).sqrt().unsqueeze(-1)
-        diff = self._radius1.abs().pow(self.event_numel) \
-                   - self._radius2.abs().pow(self.event_numel)
+        diff = self._radius1.abs().pow(self._event_size) \
+                   - self._radius2.abs().pow(self._event_size)
         rad = torch.rand( size = batch_shape, device=self._device ) \
                 * diff.abs() \
                 + torch.minimum(
                         self._radius1.abs(),
                         self._radius2.abs()
-                        ).pow(self.event_numel)
-        rad = rad.pow(1.0/self.event_numel)
+                        ).pow(self._event_size)
+        rad = rad.pow(1.0/self._event_size)
         return self._center + (directions * rad.unsqueeze(-1)
-                              ).view(batch_shape + self._event_shape)
+                              ).view(batch_shape + self.event_shape)
 
     def get_pdf(self, sample: torch.Tensor) -> torch.Tensor:
         assert (self.measure() >  0).all()
-        batch_shape = sample.shape[:-len(self._event_shape)]
-        assert sample.shape == batch_shape + self._event_shape
-        sample = sample.view( batch_shape + (self.event_numel, )
+        batch_shape = sample.shape[:-1]
+        assert sample.shape == batch_shape + self.event_shape
+        sample = sample.view( batch_shape + (self._event_size, )
                              ).to(device=self._device)
         distance = (sample - self._center.flatten()).pow(2).sum(-1).sqrt()
         inside = torch.logical_and(
@@ -108,9 +110,9 @@ class UniformShell(Distribution):
         return torch.log( self.get_pdf(sample) )
 
     def get_cdf(self, sample: torch.Tensor) -> torch.Tensor:
-        batch_shape = sample.shape[:-len(self._event_shape)]
-        assert sample.shape == batch_shape + self._event_shape
-        sample = sample.view( batch_shape + (self.event_numel, )
+        batch_shape = sample.shape[:-1]
+        assert sample.shape == batch_shape + self.event_shape
+        sample = sample.view( batch_shape + (self._event_size, )
                              ).to(device=self._device)
         if torch.logical_and(
             self._radius1 == 0,
@@ -118,7 +120,7 @@ class UniformShell(Distribution):
             above = self._center.flatten() <= sample
             return above.all(-1).view(batch_shape)
         else:
-            if self.event_numel == 1:
+            if self._event_size == 1:
                 if (self._radius1.abs() == self._radius2.abs()).all():
                     common_r = self._radius1.flatten().abs()
                     probs = sample >= self._center - common_r \
@@ -151,11 +153,11 @@ class UniformShell(Distribution):
                                 2 * small_r)
                     diff = larger - smaller
                     return diff.view(batch_shape) / self.measure()
-            elif self.event_numel == 2:
+            elif self._event_size == 2:
                 if torch.logical_or(
                         self._radius1 == 0,
                         self._radius2 == 0 ).all():
-                    sam = sample.view( ( batch_shape.numel(), self.event_numel )
+                    sam = sample.view( ( batch_shape.numel(), self._event_size )
                                 ).to(device=self._device)
                     cen = self._center.flatten()
                     rad = self._radius1.flatten().abs() + self._radius2.flatten().abs()
@@ -186,7 +188,7 @@ class UniformShell(Distribution):
                     area[b] = area_b
                     return area.view(batch_shape)/self.measure()
                 elif (self._radius1.abs() != self._radius2.abs()).all():
-                    sam = sample.view( ( batch_shape.numel(), self.event_numel )
+                    sam = sample.view( ( batch_shape.numel(), self._event_size )
                                 ).to(device=self._device)
                     cen = self._center.flatten()
                     rad1 = self._radius1.flatten().abs()
@@ -244,7 +246,7 @@ class UniformShell(Distribution):
                 else:
                     """The case when the shell is a circle."""
                     assert (self._radius1.abs() == self._radius2.abs()).all()
-                    sam = sample.view( ( batch_shape.numel(), self.event_numel )
+                    sam = sample.view( ( batch_shape.numel(), self._event_size )
                                 ).to(device=self._device)
                     cen = self._center.flatten()
                     rad = self._radius1.flatten().abs()

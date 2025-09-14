@@ -28,26 +28,28 @@ class UniformGridShell(UniformGrid):
                  counts: torch.Tensor,
                  use_exact_rectangle_probs: bool = False,
                  device: Optional[str] = None):
-
+        
+        assert center.dim() == 1
         assert radius1.numel() == 1 and radius2.numel() == 1
-        assert radius1.count_nonzero() + radius2.count_nonzero() > 0
+        assert (radius1.count_nonzero().item() \
+                + radius2.count_nonzero().item() > 0)
         assert center.shape == counts.shape
         r = torch.minimum(radius1.abs(), radius2.abs())
         R = torch.maximum(radius1.abs(), radius2.abs())
         bounds = torch.stack((center - R, center + R), 0)
         UniformGrid.__init__(self, bounds, counts, device)
         if use_exact_rectangle_probs:
-            if self.event_numel > 2:
+            if self._event_size > 2:
                 raise NotImplementedError()
             from prob_engine.misc.uniform_shell import UniformShell
             UniformGrid.__init__(self, bounds, counts, device)
             ShellDist = UniformShell(center, radius1, radius2, device)
             self.initialize_from_distribution_pdf_rectangle(ShellDist)
         else:
-            centers = self.centers().view(self._counts.prod(), self.event_numel)
-            inside_R = (centers - center.view((self.event_numel,))
+            centers = self.centers().view(self._counts.prod(), self._event_size)
+            inside_R = (centers - center.view((self._event_size,))
                         ).pow(2).sum(-1) <= R.pow(2).item()
-            outside_r = (centers - center.view((self.event_numel,))
+            outside_r = (centers - center.view((self._event_size,))
                          ).pow(2).sum(-1) >= r.pow(2).item()
             correct = torch.logical_and(inside_R, outside_r).to(
                 dtype=torch.float32, device=self._device)

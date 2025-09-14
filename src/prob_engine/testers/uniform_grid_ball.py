@@ -28,20 +28,21 @@ class UniformGridBall(UniformGrid):
                  use_exact_rectangle_probs: bool = False,
                  device: Optional[str] = None):
 
+        assert center.dim() == 1
         assert radius.numel() == 1
         assert (radius >= 0).all()
         assert center.shape == counts.shape
         bounds = torch.stack((center - radius.abs(), center + radius.abs()), 0)
         UniformGrid.__init__(self, bounds, counts, device)
         if use_exact_rectangle_probs:
-            if self.event_numel > 2:
+            if self._event_size > 2:
                 raise NotImplementedError()
             from prob_engine.misc.uniform_ball import UniformBall
             BallDist = UniformBall(center, radius, device)
             self.initialize_from_distribution_pdf_rectangle(BallDist)
         else: 
-            centers = self.centers().view(self._counts.prod(), self.event_numel)
-            inside = (centers - center.view((self.event_numel,))
+            centers = self.centers().view(self._counts.prod(), self._event_size)
+            inside = (centers - center.view((self._event_size,))
                       ).pow(2).sum(-1) <= radius.pow(2).item()
             inside = inside.to(dtype=torch.float32, device=self._device)
             self._parameter = torch.nn.Parameter(inside.view(self._parameter.shape))

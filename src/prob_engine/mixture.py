@@ -31,7 +31,7 @@ class Mixture(Distribution):
                    for d in distributions)
 
         Distribution.__init__(
-            self, distributions[0].event_shape, device=device)
+            self, distributions[0]._event_size, device=device)
         assert distributions[0]._device == self._device
         self._distributions = distributions
         self._weights = torch.nn.Parameter(torch.rand(
@@ -79,11 +79,11 @@ class Mixture(Distribution):
         samples = samples.to(device=self._device)
         assert samples.shape[0] == batch_shape.numel()
         perm = torch.randperm(batch_shape.numel(), device=self._device)
-        return samples[perm].view(batch_shape + self._event_shape)
+        return samples[perm].view(batch_shape + self.event_shape)
 
     def get_pdf(self, sample: torch.Tensor) -> torch.Tensor:
-        batch_shape = sample.shape[: - len(self._event_shape)]
-        assert sample.shape == batch_shape + self._event_shape
+        batch_shape = sample.shape[:-1]
+        assert sample.shape == batch_shape + self.event_shape
         sample = sample.to(device=self._device)
 
         norm_weights = self._weights.abs()
@@ -96,8 +96,8 @@ class Mixture(Distribution):
         return torch.log(self.get_pdf(sample))
 
     def get_cdf(self, sample: torch.Tensor) -> torch.Tensor:
-        batch_shape = sample.shape[: - len(self._event_shape)]
-        assert sample.shape == batch_shape + self._event_shape
+        batch_shape = sample.shape[:-1]
+        assert sample.shape == batch_shape + self.event_shape
         sample = sample.to(device=self._device)
 
         norm_weights = self._weights.abs()

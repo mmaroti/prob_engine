@@ -15,6 +15,7 @@
 
 import math
 import torch
+from scipy.special import comb
 from typing import Iterator, Optional
 
 from .distribution import Distribution
@@ -249,7 +250,7 @@ class NormalizerLayer(torch.nn.Module):
 
 class NeuralDist(Distribution):
     def __init__(self, device: Optional[str] = None):
-        super().__init__(event_shape=torch.Size([]), device=device)
+        super().__init__(event_size=1, device=device)
 
         self.model = NormalizerLayer(torch.nn.Sequential(
             PosLinearLayer(1, 50),
@@ -267,10 +268,10 @@ class NeuralDist(Distribution):
         return self.model.parameters()
 
     def get_cdf(self, sample: torch.Tensor) -> torch.Tensor:
-        batch_shape = sample.shape[:len(sample.shape) - len(self.event_shape)]
+        batch_shape = sample.shape[:-1]
         assert sample.shape == batch_shape + self.event_shape
         sample = sample.to(dtype=torch.float32, device=self._device)
-        sample = sample.reshape(batch_shape + (self.event_numel, ))
+        sample = sample.reshape(batch_shape + (self._event_size, ))
 
         result = self.model.forward(sample).squeeze(-1)
         assert result.shape == batch_shape

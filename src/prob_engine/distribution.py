@@ -20,14 +20,14 @@ from typing import Iterator, Optional
 
 
 class Distribution:
-    def __init__(self, event_shape: torch.Size, device: Optional[str] = None):
+    def __init__(self, event_size: int, device: Optional[str] = None):
         """
         Creates a multi variate distribution whose events have the specified
         event shape on the given device. If the device is not specified, then
         it will be automatically selected between cuda and cpu.
         """
-        assert isinstance(event_shape, torch.Size)
-        self._event_shape = event_shape
+        assert isinstance(event_size, int)
+        self._event_size = event_size
 
         # device = torch.device("cpu")
         if device is None:
@@ -41,15 +41,15 @@ class Distribution:
         """
         Returns the shape of events that this distribution can produce.
         """
-        return self._event_shape
+        return torch.Size([self._event_size])
 
     @property
-    def event_numel(self) -> int:
+    def event_size(self) -> int:
         """
         Returns the dimension of the distribution (or the number of element
         in a event).
         """
-        return self._event_shape.numel()
+        return self._event_size
 
     @property
     def device(self) -> str:
@@ -64,8 +64,7 @@ class Distribution:
         """
         Returns the list of parameters of this parametric distribution.
         """
-        if False:
-            yield
+        raise NotImplementedError()
 
     def sample(self, batch_shape: torch.Size = torch.Size()) -> torch.Tensor:
         """
@@ -106,25 +105,25 @@ class Distribution:
         corners of the rectangle, which then yields its measure
         by way of the inclusion-exclusion principle.
         """
-        batch_shape = sample.shape[:-len(self._event_shape) - 1]
-        assert sample.shape == batch_shape + (2,) + self._event_shape
-        sample = sample.view((batch_shape.numel(), 2, self.event_numel)
+        batch_shape = sample.shape[:-2]
+        assert sample.shape == batch_shape + (2, self._event_size)
+        sample = sample.view((batch_shape.numel(), 2, self.event_size)
                              ).to(device=self._device)
         sides = sample[:, 1, :] - sample[:, 0, :]
         assert (sides > 0).all()
         combs01 = torch.bitwise_and(
-            torch.arange(2**self.event_numel,
+            torch.arange(2**self.event_size,
                          device=self._device).unsqueeze(-1),
-            2**torch.arange(self.event_numel, device=self._device))
-        combs01 = (combs01 > 0).view((2**self.event_numel, self.event_numel))
+            2**torch.arange(self.event_size, device=self._device))
+        combs01 = (combs01 > 0).view((2**self.event_size, self.event_size))
         corners = sample[:, 0, :].view(
-            (batch_shape.numel(), 1, self.event_numel))\
-            + sides.view((batch_shape.numel(), 1, self.event_numel)) \
+            (batch_shape.numel(), 1, self.event_size))\
+            + sides.view((batch_shape.numel(), 1, self.event_size)) \
             * combs01
         result = (self.get_cdf(corners) *
                   (2*(combs01.count_nonzero(-1) % 2)-1)
                   ).sum(-1)
-        if self.event_numel % 2 == 0:
+        if self.event_size % 2 == 0:
             result *= -1
         return result.view(batch_shape)
 
@@ -137,12 +136,12 @@ class Distribution:
         shape batch_shape + event_shape and the output is of shape batch_shape.
         """
 
-        batch_shape = sample.shape[:-len(self._event_shape)]
-        assert sample.shape == batch_shape + self._event_shape
-        sample = sample.view((batch_shape.numel(), self.event_numel)
+        batch_shape = sample.shape[:-len(self.event_shape)]
+        assert sample.shape == batch_shape + self.event_shape
+        sample = sample.view((batch_shape.numel(), self.event_size)
                              ).to(device=self._device)
         points = self.sample(torch.Size((count, ))
-                             ).view(torch.Size((count, 1, self.event_numel))
+                             ).view(torch.Size((count, 1, self.event_size))
                                     ).to(device=self._device)
         result = (points <= sample).all(-1).count_nonzero(0) / count
         return result.view(batch_shape)
@@ -154,16 +153,16 @@ class Distribution:
         the probability of a randomly sample from the distribution
         falling into given [a,b) hyper rectangle.
         """
-        batch_shape = rectangles.shape[:-len(self._event_shape)-1]
-        assert rectangles.shape == batch_shape + (2,) + self._event_shape
+        batch_shape = rectangles.shape[:-len(self.event_shape)-1]
+        assert rectangles.shape == batch_shape + (2,) + self.event_shape
         upper_bounds = rectangles.view((batch_shape.numel(), 2, 1,
-                                        self.event_numel)
+                                        self.event_size)
                                        )[:, 1, :, :].to(device=self._device)
         lower_bounds = rectangles.view((batch_shape.numel(), 2, 1,
-                                        self.event_numel)
+                                        self.event_size)
                                        )[:, 0, :, :].to(device=self._device)
         points = self.sample(torch.Size((count, ))
-                             ).view(torch.Size((1, count, self.event_numel))
+                             ).view(torch.Size((1, count, self.event_size))
                                     ).to(device=self._device)
         result = torch.logical_and(
             points >= lower_bounds,
@@ -181,15 +180,15 @@ class Distribution:
         [x_1,...,x_k] correspond to the center, and r corresponds to the radius.
         """
         batch_shape = balls.shape[:-1]
-        assert balls.shape == batch_shape + (self.event_numel + 1, )
-        balls = balls.view((batch_shape.numel(), self.event_numel + 1))
+        assert balls.shape == batch_shape + (self.event_size + 1, )
+        balls = balls.view((batch_shape.numel(), self.event_size + 1))
         radius = balls[:, -1].view((batch_shape.numel(), 1))
         center = balls[:, :-1]
         center = center.view((batch_shape.numel(), 1,
-                              self.event_numel)
+                              self.event_size)
                              ).to(device=self._device)
         points = self.sample(torch.Size((count, ))
-                             ).view(torch.Size((1, count, self.event_numel))
+                             ).view(torch.Size((1, count, self.event_size))
                                     ).to(device=self._device)
         distance = (points - center).pow(2).sum(-1)
         result = (distance < radius.pow(2)).count_nonzero(-1)/count
@@ -205,7 +204,7 @@ class Distribution:
         histogram approximating the probability density of the distribution.
         This method assumes that the dimension of the distribution is one or two.
         """
-        if self.event_numel == 1:
+        if self.event_size == 1:
             sample = self.sample(torch.Size((count, )))
             sample = sample.cpu().flatten().detach().numpy()
             pyplot.hist(sample,
@@ -214,7 +213,7 @@ class Distribution:
                         density=True)
             pyplot.title("Empiricial PDF")
             pyplot.show()
-        elif self.event_numel == 2:
+        elif self.event_size == 2:
             sample = self.sample(torch.Size((count, )))
             sample = sample.cpu().reshape((count, 2)).detach().numpy()
             pyplot.hist2d(sample[:, 0], sample[:, 1],
@@ -239,7 +238,7 @@ class Distribution:
         cumulative histogram approximating the cumulative distribution function.
         This method assumes that the dimension of the distribution is one.
         """
-        if self.event_numel == 1:
+        if self.event_size == 1:
             sample = self.sample(torch.Size((count, )))
             sample = sample.cpu().flatten().detach().numpy()
             pyplot.hist(sample,
@@ -249,7 +248,7 @@ class Distribution:
                         cumulative=True)
             pyplot.title("Empiricial CDF")
             pyplot.show()
-        elif self.event_numel == 2:
+        elif self.event_size == 2:
             sample = self.sample(torch.Size((count, )))
             sample = sample.cpu().reshape((count, 2)).detach().numpy()
             values, xs, ys = numpy.histogram2d(
@@ -280,7 +279,7 @@ class Distribution:
         density values as calculated by the log_prob method. This method assumes
         that the dimension of the distribution is one or two.
         """
-        if self.event_numel == 1:
+        if self.event_size == 1:
             width = (max_bound - min_bound) / bins
             sample = torch.linspace(
                 min_bound + 0.5 * width,
@@ -288,7 +287,7 @@ class Distribution:
                 bins,
                 dtype=torch.float32,
                 device=self._device)
-            sample = sample.view(torch.Size((bins,)) + self._event_shape)
+            sample = sample.view(torch.Size((bins,)) + self.event_shape)
             value = self.get_pdf(sample)
             pyplot.bar(
                 x=sample.cpu().flatten().numpy(),
@@ -296,7 +295,7 @@ class Distribution:
                 width=width)
             pyplot.title("Exact PDF")
             pyplot.show()
-        elif self.event_numel == 2:
+        elif self.event_size == 2:
             width = (max_bound - min_bound) / bins
             sample1 = torch.linspace(
                 min_bound + 0.5 * width,
@@ -306,7 +305,7 @@ class Distribution:
                 device=self._device)
             sample2 = torch.meshgrid([sample1, sample1], indexing="xy")
             sample2 = torch.stack(sample2, dim=-1).view(
-                torch.Size((bins, bins)) + self._event_shape)
+                torch.Size((bins, bins)) + self.event_shape)
             value2 = self.get_pdf(sample2)
             pyplot.pcolormesh(
                 sample1.cpu().numpy(),
@@ -328,7 +327,7 @@ class Distribution:
         distribution function values as calculated by the get_cdf method. This
         method assumes that the dimension of the distribution is one or two.
         """
-        if self.event_numel == 1:
+        if self.event_size == 1:
             width = (max_bound - min_bound) / bins
             sample = torch.linspace(
                 min_bound + 0.5 * width,
@@ -336,7 +335,7 @@ class Distribution:
                 bins,
                 dtype=torch.float32,
                 device=self._device)
-            sample = sample.view(torch.Size((bins,)) + self._event_shape)
+            sample = sample.view(torch.Size((bins,)) + self.event_shape)
             value = self.get_cdf(sample).detach()
             pyplot.bar(
                 x=sample.cpu().flatten().numpy(),
@@ -344,7 +343,7 @@ class Distribution:
                 width=width)
             pyplot.title("Exact CDF")
             pyplot.show()
-        elif self.event_numel == 2:
+        elif self.event_size == 2:
             width = (max_bound - min_bound) / bins
             sample1 = torch.linspace(
                 min_bound + 0.5 * width,
@@ -354,7 +353,7 @@ class Distribution:
                 device=self._device)
             sample2 = torch.meshgrid([sample1, sample1], indexing="xy")
             sample2 = torch.stack(sample2, dim=-1).view(
-                torch.Size((bins, bins)) + self._event_shape)
+                torch.Size((bins, bins)) + self.event_shape)
             value2 = self.get_cdf(sample2).detach()
             pyplot.pcolormesh(
                 sample1.cpu().numpy(),
