@@ -81,7 +81,7 @@ class UniformGrid(Distribution):
         half_size = self._cell_size.unsqueeze(-2)/2
         cell_bounds = torch.cat(
             [centers - half_size, centers + half_size], dim=-2)
-        assert cell_bounds.shape == self._parameter.shape + (2,1)
+        assert cell_bounds.shape == self._parameter.shape + (2,self._event_size)
         return cell_bounds
 
     def initialize(self, pdf: Callable[[torch.Tensor], float]):
@@ -91,7 +91,7 @@ class UniformGrid(Distribution):
         then sets parameters to approximate result.
         """
         centers = self.centers()
-        centers = centers.reshape( (self._parameter.numel(), 1))
+        centers = centers.reshape( (self._parameter.numel(), self._event_size))
         pdfvals = torch.tensor([pdf(c) for c in centers],
                                dtype=torch.float32, device=self._device)
         self._parameter = Parameter(pdfvals.view(self._parameter.shape))
@@ -279,6 +279,13 @@ def test():
 
         print(grid2._parameter/grid2._parameter.sum())
         print(grid2.get_rectangle_prob(grid2.cell_bounds()))
+
+        print("Evaluation of get_cdf at Infinity:",
+            grid2.get_cdf(torch.full(grid2.event_shape,torch.inf)))
+        print("Evaluation of get_cdf at [0,Infinity]:",
+            grid2.get_cdf(torch.tensor([0.0,torch.inf])))
+        print("CDF of marginal belonging to first coordinate at 0:",
+            grid2.get_cdf_marginal(torch.tensor([1,0]),torch.tensor([[0.0]])))        
 
         """ Parameter initialization tests """
         from .normal import Normal

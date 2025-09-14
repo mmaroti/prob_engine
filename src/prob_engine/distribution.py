@@ -96,6 +96,28 @@ class Distribution:
         shape batch_shape.
         """
         raise NotImplementedError()
+    
+    def get_cdf_marginal(self, coords: torch.Tensor,
+                         sample: torch.Tensor) -> torch.Tensor:
+        """
+        Returns cdf of the marginal distribution, where 'coords'
+        contains boolean values, and dimensions corresponding to
+        'True' are kept, and ones corresponding to 'False' are not.
+        In 'coords', values of 0 are taken to be 'False',
+        values other than 0 are taken to be 'True'.
+        """
+        assert coords.shape == self.event_shape
+        margin_dim = coords.count_nonzero().item()
+        coords = (coords.abs() > 0)
+        assert coords.shape == self.event_shape
+        batch_shape = sample.shape[:-1]
+        assert sample.shape[-1] == margin_dim
+        sample = sample.view((batch_shape.numel(), margin_dim))
+        points = torch.empty((batch_shape.numel(), self._event_size))
+        points[:,torch.logical_not(coords)] = \
+            torch.fill(points[:,torch.logical_not(coords)], torch.inf)
+        points[:,coords] = sample
+        return self.get_cdf(points).view(batch_shape)
 
     def get_rectangle_prob(self, sample: torch.Tensor) -> torch.Tensor:
         """
@@ -136,7 +158,7 @@ class Distribution:
         shape batch_shape + event_shape and the output is of shape batch_shape.
         """
 
-        batch_shape = sample.shape[:-len(self.event_shape)]
+        batch_shape = sample.shape[:-1]
         assert sample.shape == batch_shape + self.event_shape
         sample = sample.view((batch_shape.numel(), self.event_size)
                              ).to(device=self._device)
@@ -153,7 +175,7 @@ class Distribution:
         the probability of a randomly sample from the distribution
         falling into given [a,b) hyper rectangle.
         """
-        batch_shape = rectangles.shape[:-len(self.event_shape)-1]
+        batch_shape = rectangles.shape[:-2]
         assert rectangles.shape == batch_shape + (2,) + self.event_shape
         upper_bounds = rectangles.view((batch_shape.numel(), 2, 1,
                                         self.event_size)

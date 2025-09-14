@@ -132,3 +132,9 @@ def test():
     dist.plot_empirical_pdf()
     dist.plot_empirical_cdf()
     dist.plot_exact_cdf()
+    print("Evaluation of get_cdf at Infinity:",
+          dist.get_cdf(torch.full(dist.event_shape,torch.inf)))
+    print("Evaluation of get_cdf at [0,Infinity]:",
+          dist.get_cdf(torch.tensor([0.0,torch.inf])))
+    print("CDF of marginal belonging to first coordinate at 0:",
+          dist.get_cdf_marginal(torch.tensor([1,0]),torch.tensor([[0.0]])))

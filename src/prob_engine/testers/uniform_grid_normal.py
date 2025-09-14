@@ -81,6 +81,13 @@ def test():
     ugn3.plot_empirical_cdf()
     ugn3.plot_empirical_cdf()
 
+    print("Evaluation of get_cdf at Infinity:",
+          ugn3.get_cdf(torch.full(ugn3.event_shape,torch.inf)))
+    print("Evaluation of get_cdf at [0,Infinity]:",
+          ugn3.get_cdf(torch.tensor([0.0,torch.inf])))
+    print("CDF of marginal belonging to first coordinate at 0:",
+          ugn3.get_cdf_marginal(torch.tensor([1,0]),torch.tensor([[0.0]])))
+
     ugn4 = UniformGridNormal(means2, sdevs2, bounds2, counts2, True)
     n4 = Normal(means2, sdevs2)
     ugn4.plot_exact_pdf()

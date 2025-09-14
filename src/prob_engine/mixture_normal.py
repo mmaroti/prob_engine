@@ -81,7 +81,7 @@ class MixtureNormal(Distribution):
                 dmatrix = dmatrix + (dmatrix <= 0) * dmatrix.sum()
                 min_distance = dmatrix.min()
             means = d.atoms.to(self._device)
-            sdevs = torch.full(means.shape, min_distance/3.0,
+            sdevs = torch.full(means.shape, min_distance.item()/3.0,
                                dtype = torch.float32, device=self._device)
             self._means = Parameter(means)
             self._sdevs = Parameter(sdevs)
@@ -200,6 +200,12 @@ def test():
     mix2.plot_exact_cdf()
     mixn2.plot_exact_cdf()
     print(mixn2.sample(torch.Size((2, 3))))
+    print("Evaluation of get_cdf at Infinity:",
+          mixn2.get_cdf(torch.full(mixn2.event_shape,torch.inf)))
+    print("Evaluation of get_cdf at [0,Infinity]:",
+          mixn2.get_cdf(torch.tensor([0.0,torch.inf])))
+    print("CDF of marginal belonging to first coordinate at 0:",
+          mixn2.get_cdf_marginal(torch.tensor([1,0]),torch.tensor([[0.0]])))
 
     disc = Discrete(torch.tensor(
         [[-0.6, -0.2], [-0.3, -0.7], [0.1, 0.1], [0.2, 0.8]]))

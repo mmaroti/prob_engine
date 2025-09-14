@@ -71,6 +71,13 @@ def test():
     dist2.plot_empirical_cdf()
     distBall.plot_empirical_cdf()
 
+    print("Evaluation of get_cdf at Infinity:",
+          dist2.get_cdf(torch.full(dist2.event_shape,torch.inf)))
+    print("Evaluation of get_cdf at [-0.25,Infinity]:",
+          dist2.get_cdf(torch.tensor([-0.25,torch.inf])))
+    print("CDF of marginal belonging to first coordinate at -0.25:",
+          dist2.get_cdf_marginal(torch.tensor([1,0]),torch.tensor([[-0.25]])))
+
     dist3 = UniformGridBall(torch.tensor(
         [-0.5, -0.5]), torch.tensor(0.5), torch.tensor([10, 10]), True)
     print("Parameters", list(dist3.parameters))

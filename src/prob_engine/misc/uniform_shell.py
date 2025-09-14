@@ -293,6 +293,13 @@ def test():
     dist2.plot_empirical_cdf()
     dist2.plot_exact_cdf()
 
+    print("Evaluation of get_cdf at Infinity:",
+          dist2.get_cdf(torch.full(dist2.event_shape,torch.inf)))
+    print("Evaluation of get_cdf at [0,Infinity]:",
+          dist2.get_cdf(torch.tensor([0.0,torch.inf])))
+    print("CDF of marginal belonging to first coordinate at 0:",
+          dist2.get_cdf_marginal(torch.tensor([1,0]),torch.tensor([[0.0]])))
+
     dist3 = UniformShell(torch.tensor([-0.25, -0.25]), torch.tensor(0.45), torch.tensor(0.45))
     print("Parameters", list(dist3.parameters))
     print("Volume of hyperspherical shell", dist3.measure())

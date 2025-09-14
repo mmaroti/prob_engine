@@ -154,3 +154,9 @@ def test():
     disc.plot_empirical_pdf()
     disc.plot_empirical_cdf()
     disc.plot_exact_cdf()
+    print("Evaluation of get_cdf at Infinity:",
+          disc.get_cdf(torch.full(disc.event_shape,torch.inf)))
+    print("Evaluation of get_cdf at Infinity:",
+          disc.get_cdf(torch.tensor([[0.5,torch.inf]])))
+    print("CDF of marginal belonging to first coordinate at 0.5:",
+          disc.get_cdf_marginal(torch.tensor([1,0]),torch.tensor([[0.5]])))
