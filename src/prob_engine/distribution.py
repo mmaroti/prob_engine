@@ -220,12 +220,17 @@ class Distribution:
                            min_bound: float = -1.0,
                            max_bound: float = 1.0,
                            bins: int = 60,
-                           count: int = 100000):
+                           count: int = 100000,
+                           title : str = ""):
         """
         Takes count many samples from the distribution and plots the resulting
         histogram approximating the probability density of the distribution.
         This method assumes that the dimension of the distribution is one or two.
         """
+        if title=="":
+            plot_title = "Empirical PDF"
+        else:
+            plot_title = "Empirical PDF: " + title
         if self.event_size == 1:
             sample = self.sample(torch.Size((count, )))
             sample = sample.cpu().flatten().detach().numpy()
@@ -233,7 +238,7 @@ class Distribution:
                         bins=bins,
                         range=(min_bound, max_bound),
                         density=True)
-            pyplot.title("Empiricial PDF")
+            pyplot.title(plot_title)
             pyplot.show()
         elif self.event_size == 2:
             sample = self.sample(torch.Size((count, )))
@@ -245,7 +250,7 @@ class Distribution:
                           density=True,
                           rasterized=True)
             pyplot.colorbar()
-            pyplot.title("Empiricial PDF")
+            pyplot.title(plot_title)
             pyplot.show()
         else:
             raise ValueError("invalid event size")
@@ -254,12 +259,17 @@ class Distribution:
                            min_bound: float = -1.0,
                            max_bound: float = 1.0,
                            bins: int = 120,
-                           count: int = 100000):
+                           count: int = 100000,
+                           title: str = ""):
         """
         Takes count many samples from the distribution and plots the resulting
         cumulative histogram approximating the cumulative distribution function.
         This method assumes that the dimension of the distribution is one.
         """
+        if title=="":
+            plot_title = "Empirical CDF"
+        else:
+            plot_title = "Empirical CDF: " + title
         if self.event_size == 1:
             sample = self.sample(torch.Size((count, )))
             sample = sample.cpu().flatten().detach().numpy()
@@ -268,7 +278,7 @@ class Distribution:
                         range=(min_bound, max_bound),
                         density=True,
                         cumulative=True)
-            pyplot.title("Empiricial CDF")
+            pyplot.title(plot_title)
             pyplot.show()
         elif self.event_size == 2:
             sample = self.sample(torch.Size((count, )))
@@ -287,7 +297,7 @@ class Distribution:
                 numpy.transpose(values),
                 rasterized=True)
             pyplot.colorbar()
-            pyplot.title("Empiricial CDF")
+            pyplot.title(plot_title)
             pyplot.show()
         else:
             raise ValueError("invalid event size")
@@ -295,12 +305,17 @@ class Distribution:
     def plot_exact_pdf(self,
                        min_bound: float = -1.0,
                        max_bound: float = 1.0,
-                       bins: int = 60):
+                       bins: int = 60,
+                       title: str = ""):
         """
         Creates a grid of sample points and plots the corresponding probability
         density values as calculated by the log_prob method. This method assumes
         that the dimension of the distribution is one or two.
         """
+        if title=="":
+            plot_title = "Exact PDF"
+        else:
+            plot_title = "Exact PDF: " + title
         if self.event_size == 1:
             width = (max_bound - min_bound) / bins
             sample = torch.linspace(
@@ -315,7 +330,7 @@ class Distribution:
                 x=sample.cpu().flatten().numpy(),
                 height=value.cpu().flatten().detach().numpy(),
                 width=width)
-            pyplot.title("Exact PDF")
+            pyplot.title(plot_title)
             pyplot.show()
         elif self.event_size == 2:
             width = (max_bound - min_bound) / bins
@@ -335,7 +350,7 @@ class Distribution:
                 value2.cpu().detach().numpy(),
                 rasterized=True)
             pyplot.colorbar()
-            pyplot.title("Exact PDF")
+            pyplot.title(plot_title)
             pyplot.show()
         else:
             raise ValueError("invalid event size")
@@ -343,12 +358,17 @@ class Distribution:
     def plot_exact_cdf(self,
                        min_bound: float = -1.0,
                        max_bound: float = 1.0,
-                       bins: int = 120):
+                       bins: int = 120,
+                       title: str = ""):
         """
         Creates a grid of sample points and plots the corresponding cumulative
         distribution function values as calculated by the get_cdf method. This
         method assumes that the dimension of the distribution is one or two.
         """
+        if title=="":
+            plot_title = "Exact CDF"
+        else:
+            plot_title = "Exact CDF: " + title
         if self.event_size == 1:
             width = (max_bound - min_bound) / bins
             sample = torch.linspace(
@@ -363,7 +383,7 @@ class Distribution:
                 x=sample.cpu().flatten().numpy(),
                 height=value.cpu().flatten().numpy(),
                 width=width)
-            pyplot.title("Exact CDF")
+            pyplot.title(plot_title)
             pyplot.show()
         elif self.event_size == 2:
             width = (max_bound - min_bound) / bins
@@ -383,7 +403,70 @@ class Distribution:
                 value2.cpu().numpy(),
                 rasterized=True)
             pyplot.colorbar()
-            pyplot.title("Exact CDF")
+            pyplot.title(plot_title)
+            pyplot.show()
+        else:
+            raise ValueError("invalid event size")
+    
+    def plot_pdf_from_cdf(self,
+                          min_bound: float = -1.0,
+                          max_bound: float = 1.0,
+                          bins: int = 60,
+                          title: str = ""):
+        """
+        Plots the approximate exact pdf using the exact cdf function.
+        This method assumes that the dimension of the distribution
+        is one or two.
+        """
+        if title=="":
+            plot_title = "Approximate PDF"
+        else:
+            plot_title = "Approximate PDF: " + title
+        if self._event_size == 1:
+            width = (max_bound - min_bound) / bins
+            sample = torch.linspace(
+                min_bound + 0.5 * width,
+                max_bound - 0.5 * width,
+                bins,
+                dtype=torch.float32,
+                device=self._device)
+            sample = sample.view((bins, self._event_size))
+            rectangles = torch.stack(
+                (sample - torch.tensor([0.5 * width]),
+                 sample + torch.tensor([0.5 * width])),
+                 dim = -2)
+            value = self.get_rectangle_prob(rectangles)
+            value *= 1.0/float(width)
+            pyplot.bar(
+                x=sample.cpu().flatten().numpy(),
+                height=value.cpu().flatten().detach().numpy(),
+                width=width)
+            pyplot.title(plot_title)
+            pyplot.show()
+        elif self._event_size == 2:
+            width = (max_bound - min_bound) / bins
+            sample1 = torch.linspace(
+                min_bound + 0.5 * width,
+                max_bound - 0.5 * width,
+                bins,
+                dtype=torch.float32,
+                device=self._device)
+            sample2 = torch.meshgrid([sample1, sample1], indexing="xy")
+            sample2 = torch.stack(sample2, dim=-1).view(
+                (bins, bins, self._event_size))
+            rectangles2 = torch.stack(
+                (sample2 - torch.tensor([0.5*width, 0.5*width]),
+                 sample2 + torch.tensor([0.5*width, 0.5*width]),),
+                 dim = -2)
+            value2 = self.get_rectangle_prob(rectangles2)
+            value2 *= 1.0/float(width*width)
+            pyplot.pcolormesh(
+                sample1.cpu().numpy(),
+                sample1.cpu().numpy(),
+                value2.cpu().detach().numpy(),
+                rasterized=True)
+            pyplot.colorbar()
+            pyplot.title(plot_title)
             pyplot.show()
         else:
             raise ValueError("invalid event size")
