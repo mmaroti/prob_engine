@@ -85,3 +85,13 @@ def test_uniform_grid_shell():
 def test_uniform_grid_normal():
     from .testers import uniform_grid_normal
     uniform_grid_normal.test()
+
+@cli.command()
+def NN_training_test_1():
+    from .training.NN_to_uniform_grid import NN_train_test_1
+    NN_train_test_1()
+
+@cli.command()
+def NN_training_test_2():
+    from .training.NN_to_uniform_grid import NN_train_test_2
+    NN_train_test_2()

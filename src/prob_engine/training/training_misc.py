@@ -152,7 +152,10 @@ def train_distribution(
             error_tracker.append(error.item())
         if step % 1000 == 0:
             dist.plot_exact_cdf()
-            dist.plot_exact_pdf()
+            try:
+                dist.plot_exact_pdf()
+            except NotImplementedError:
+                dist.plot_pdf_from_cdf()
         error.backward()
         opt.step()
     animate_datalist(error_tracker)
