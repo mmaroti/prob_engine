@@ -43,7 +43,8 @@ class PosLinearLayer(torch.nn.Module):
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         weight = torch.abs(self.weight)
         temp = torch.matmul(input, weight)
-        return torch.add(temp, self.bias)
+        output = torch.add(temp, self.bias)
+        return output
 
 
 class PosQuadraticLayer(torch.nn.Module):
@@ -74,13 +75,13 @@ class PosQuadraticLayer(torch.nn.Module):
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         temp = self.weight1.abs()
         temp = torch.matmul(input, temp)
-        result = temp
+        output = temp
         temp = self.weight2.abs()
         temp = torch.einsum("...bi,jik->...bjk", input, temp)
         temp = torch.einsum("...bi,...bki->...bk", input, temp)
-        result = torch.add(result, temp)
-        result = torch.add(result, self.bias)
-        return result
+        output = torch.add(output, temp)
+        output = torch.add(output, self.bias)
+        return output
 
 class PosPolynomLayer(torch.nn.Module):
     def __init__(self, size_in: int, size_out: int, degree: int, device = None):
@@ -117,10 +118,10 @@ class PosPolynomLayer(torch.nn.Module):
         assert input.shape[-1] == self.size_in
         batch_shape = input.shape[:-1]
         input = input.view((batch_shape.numel(),input.shape[-1]))
-        result = torch.zeros((input.shape[0],1),
+        output = torch.zeros((input.shape[0],1),
                              dtype=torch.float32,
                              device=self.bias.device)
-        result = torch.add(result, self.bias)
+        output = torch.add(output, self.bias)
         for i, w in enumerate(self.weights):
             #could use torch.outer or torch.einsum in for loop
             combos = torch.combinations(
@@ -128,8 +129,31 @@ class PosPolynomLayer(torch.nn.Module):
                 r = i+1, with_replacement=True)
             temp = input[:,combos].prod(-1).unsqueeze(-2)
             temp = torch.mul(w.abs(),temp).sum(-1)
-            result = torch.add(result, temp)
-        return result.view(batch_shape + (self.size_out,))
+            output = torch.add(output, temp)
+        output = output.view(batch_shape + (self.size_out,))
+        return output
+
+class PosConvexLayer(torch.nn.Module):
+    def __init__(self, size_in: int, size_out: int, device=None):
+        super().__init__()
+
+        assert size_in > 0 and size_out > 0
+        self.size_in = size_in
+        self.size_out = size_out
+
+        self.weight = torch.nn.Parameter(
+            torch.empty((size_in, size_out), device=device, dtype=torch.float32))
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        bound = 1.0 / math.sqrt(self.size_in)
+        torch.nn.init.uniform_(self.weight, -bound, bound)
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        weight = torch.abs(self.weight)
+        weight *= 1.0/weight.sum(-2)
+        output = torch.matmul(input.squeeze(-1).squeeze(-1), weight)
+        return output
 
 class MinMaxLayer(torch.nn.Module):
     def __init__(self):
@@ -151,19 +175,86 @@ class Relu2Layer(torch.nn.Module):
     def __init__(self):
         super().__init__()
 
-    def forward(self, input):
+    def forward(self, input) -> torch.Tensor:
         positive = torch.relu(input)
         negative = -torch.relu(-input)
         output = torch.cat((positive, negative), dim=-1)
         return output
 
 
+class UniformMixLayer(torch.nn.Module):
+    """Maps, coordinate-wise, into [0,1]"""
+    def __init__(self, count: int, device = None):
+        super().__init__()
+
+        assert count > 0
+        self.count = count
+        self.bases = torch.nn.Parameter(
+            torch.empty((count,), device=device, dtype=torch.float32))
+        self.slopes = torch.nn.Parameter(
+            torch.empty((count,), device=device, dtype=torch.float32))
+        self.weights = torch.nn.Parameter(
+            torch.empty((count,), device=device, dtype=torch.float32))
+        #self.register_parameter("bias", self.bias)
+        self.reset_parameters()
+    
+    def reset_parameters(self):
+        torch.nn.init.uniform_(self.bases, -1, 1)
+        torch.nn.init.uniform_(self.slopes, 0.5, 2)
+        bounds = 1.0/math.sqrt(self.count)
+        torch.nn.init.uniform_(self.weights, -bounds, bounds)
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        input = input.unsqueeze(-1)
+        output = (input - self.bases)*self.slopes
+        output = torch.clamp(output, min=0.0, max=1.0)
+        w = self.weights.abs()
+        w *= 1.0/w.sum()
+        output = (output*w).sum(-1)
+        output = output.view(input.shape)
+        return output
+
+class SmoothCompactTransitionMixLayer(torch.nn.Module):
+    """Maps, coordinate-wise, into [0,1]"""
+    def __init__(self, count: int, device = None):
+        super().__init__()
+
+        assert count > 0
+        self.count = count
+        self.bases = torch.nn.Parameter(
+            torch.empty((count,), device=device, dtype=torch.float32))
+        self.slopes = torch.nn.Parameter(
+            torch.empty((count,), device=device, dtype=torch.float32))
+        self.weights = torch.nn.Parameter(
+            torch.empty((count,), device=device, dtype=torch.float32))
+        #self.register_parameter("bias", self.bias)
+        self.reset_parameters()
+    
+    def reset_parameters(self):
+        torch.nn.init.uniform_(self.bases, -1, 1)
+        torch.nn.init.uniform_(self.slopes, 0, 2)
+        bounds = 1.0/math.sqrt(self.count)
+        torch.nn.init.uniform_(self.weights, -bounds, bounds)
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        batch_shape = input.shape[:-1]
+        input = input.view((batch_shape.numel(),input.shape[-1], 1))
+        output = (input - self.bases)*self.slopes
+        value1 = torch.exp(-1.0/output.relu())
+        value2 = torch.exp(-1.0/(1.0-output).relu())
+        output = value1/(value1+value2)
+        output = (output*self.weights.abs()).sum(-1)
+        output *= 1.0/self.weights.abs().sum()
+        output = output.view(input.shape)
+        return output
+
 class ExponentialLayer(torch.nn.Module):
     def __init__(self):
         super().__init__()
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        return torch.exp(input)
+        output = torch.exp(input)
+        return output
 
 
 class ProductLayer(torch.nn.Module):
@@ -189,7 +280,8 @@ class ProductLayer(torch.nn.Module):
         # Needs 2 to ensure that the second derivatives are positive
         weight = self.weight.abs() + 2
         temp = torch.matmul(input.log(), weight).exp()
-        return torch.mul(temp, self.bias.abs())
+        output = torch.mul(temp, self.bias.abs())
+        return output
 
 
 class NormalizerLayer(torch.nn.Module):
@@ -210,6 +302,22 @@ class NormalizerLayer(torch.nn.Module):
         assert output.shape == value2.shape
         return output
 
+class ClampLayer(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        output = torch.clamp(input, min = 0.0, max = 1.0)
+        return output
+
+class TensorOutputLayer(torch.nn.Module):
+    def __init__(self, child: torch.nn.Module):
+        super().__init__()
+        self.child = child
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        output = self.child(input)
+        return output
 
 class NeuralDist(Distribution):
     def __init__(self, device: Optional[str] = None):
