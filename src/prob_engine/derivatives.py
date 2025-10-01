@@ -86,7 +86,7 @@ def get_df1(fx: torch.Tensor, x: torch.Tensor,
     Assumes that inputs are not batched.
     """
     assert x.requires_grad is True
-    if flat_fx.numel() == 1:
+    if fx.numel() == 1:
         result = torch.autograd.grad(fx, x, 
                 create_graph=graph,
                 allow_unused=True)[0]

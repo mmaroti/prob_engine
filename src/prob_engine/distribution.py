@@ -96,7 +96,7 @@ class Distribution:
         shape batch_shape.
         """
         raise NotImplementedError()
-    
+
     def get_cdf_marginal(self, coords: torch.Tensor,
                          sample: torch.Tensor) -> torch.Tensor:
         """
@@ -107,16 +107,16 @@ class Distribution:
         values other than 0 are taken to be 'True'.
         """
         assert coords.shape == self.event_shape
-        margin_dim = coords.count_nonzero().item()
+        margin_dim = int(coords.count_nonzero().item())
         coords = (coords.abs() > 0)
         assert coords.shape == self.event_shape
         batch_shape = sample.shape[:-1]
         assert sample.shape[-1] == margin_dim
         sample = sample.view((batch_shape.numel(), margin_dim))
         points = torch.empty((batch_shape.numel(), self._event_size))
-        points[:,torch.logical_not(coords)] = \
-            torch.fill(points[:,torch.logical_not(coords)], torch.inf)
-        points[:,coords] = sample
+        points[:, torch.logical_not(coords)] = \
+            torch.fill(points[:, torch.logical_not(coords)], torch.inf)
+        points[:, coords] = sample
         return self.get_cdf(points).view(batch_shape)
 
     def get_rectangle_prob(self, sample: torch.Tensor) -> torch.Tensor:
@@ -221,13 +221,13 @@ class Distribution:
                            max_bound: float = 1.0,
                            bins: int = 60,
                            count: int = 100000,
-                           title : str = ""):
+                           title: str = ""):
         """
         Takes count many samples from the distribution and plots the resulting
         histogram approximating the probability density of the distribution.
         This method assumes that the dimension of the distribution is one or two.
         """
-        if title=="":
+        if title == "":
             plot_title = "Empirical PDF"
         else:
             plot_title = "Empirical PDF: " + title
@@ -266,7 +266,7 @@ class Distribution:
         cumulative histogram approximating the cumulative distribution function.
         This method assumes that the dimension of the distribution is one.
         """
-        if title=="":
+        if title == "":
             plot_title = "Empirical CDF"
         else:
             plot_title = "Empirical CDF: " + title
@@ -312,7 +312,7 @@ class Distribution:
         density values as calculated by the log_prob method. This method assumes
         that the dimension of the distribution is one or two.
         """
-        if title=="":
+        if title == "":
             plot_title = "Exact PDF"
         else:
             plot_title = "Exact PDF: " + title
@@ -365,7 +365,7 @@ class Distribution:
         distribution function values as calculated by the get_cdf method. This
         method assumes that the dimension of the distribution is one or two.
         """
-        if title=="":
+        if title == "":
             plot_title = "Exact CDF"
         else:
             plot_title = "Exact CDF: " + title
@@ -407,7 +407,7 @@ class Distribution:
             pyplot.show()
         else:
             raise ValueError("invalid event size")
-    
+
     def plot_pdf_from_cdf(self,
                           min_bound: float = -1.0,
                           max_bound: float = 1.0,
@@ -418,7 +418,7 @@ class Distribution:
         This method assumes that the dimension of the distribution
         is one or two.
         """
-        if title=="":
+        if title == "":
             plot_title = "Approximate PDF"
         else:
             plot_title = "Approximate PDF: " + title
@@ -434,7 +434,7 @@ class Distribution:
             rectangles = torch.stack(
                 (sample - torch.tensor([0.5 * width]),
                  sample + torch.tensor([0.5 * width])),
-                 dim = -2)
+                dim=-2)
             value = self.get_rectangle_prob(rectangles)
             value *= 1.0/float(width)
             pyplot.bar(
@@ -457,7 +457,7 @@ class Distribution:
             rectangles2 = torch.stack(
                 (sample2 - torch.tensor([0.5*width, 0.5*width]),
                  sample2 + torch.tensor([0.5*width, 0.5*width]),),
-                 dim = -2)
+                dim=-2)
             value2 = self.get_rectangle_prob(rectangles2)
             value2 *= 1.0/float(width*width)
             pyplot.pcolormesh(

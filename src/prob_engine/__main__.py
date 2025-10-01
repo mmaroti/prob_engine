@@ -95,3 +95,8 @@ def NN_training_test_1():
 def NN_training_test_2():
     from .training.NN_to_uniform_grid import NN_train_test_2
     NN_train_test_2()
+
+@cli.command()
+def test_deriv():
+    from .test_deriv import test
+    test()
