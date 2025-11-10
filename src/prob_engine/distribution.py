@@ -79,15 +79,31 @@ class Distribution:
         given sample. The input is of shape batch_shape + event_shape and
         the output is of shape batch_shape.
         """
-        raise NotImplementedError()
+        return torch.log(self.get_pdf(sample))
 
     def get_pdf(self, sample: torch.Tensor) -> torch.Tensor:
         """
         Calculates the density function at the given sample.
         The input is of shape batch_shape + event_shape and
         the output is of shape batch_shape.
+        If the cdf function exists,
+        uses its mixed partial derivative at sample points.
         """
-        return torch.exp(self.log_prob(sample))
+        from . import derivatives
+        coords = list(range(0, self._event_size))
+        batch_shape = sample.shape[:-1]
+        assert sample.shape[-1] == self.event_shape
+        flat_sample = sample.view(
+            batch_shape.numel(), self.event_size)
+        cdf = self.get_cdf(flat_sample)
+        if cdf.numel() == 1:
+            result = derivatives.get_partial(
+                flat_sample, cdf, coords)
+        else:
+            result = derivatives.get_partial_batched(
+                flat_sample, cdf, coords)
+
+        return result.view(batch_shape)
 
     def get_cdf(self, sample: torch.Tensor) -> torch.Tensor:
         """

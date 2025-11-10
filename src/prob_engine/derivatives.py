@@ -16,132 +16,68 @@
 from typing import Callable
 import torch
 
-def df_func(func: Callable[[torch.Tensor], torch.Tensor],
-            order: int, lower_orders: bool
-            )-> Callable[[torch.Tensor], torch.Tensor] | Callable[[torch.Tensor], tuple[torch.Tensor, ...]]:
+def get_partial(
+        x: torch.Tensor, fx: torch.Tensor,
+        coords: list[int]) -> torch.Tensor:
     """
-    Returns the 'order'-differentiated 'func' function.
-    Currently uses torch.func.jacrev for the sake of performance,
-    consider replacing with torch.autograd.functional.jacobian
-    in the future when it becomes stable and efficient.
+    Returns the mixed partial derivatives of 'fx'
+    as a function of 'x'.
     """
-    assert order >= 0
-    if order == 0:
-        result = func
-    elif order == 1:
-        result = torch.func.jacrev(
-            func, 0, has_aux=lower_orders)
-    elif order > 1 and (not lower_orders):
-        temp = func
-        for i in range(0,order):
-            temp = torch.func.jacrev(
-                temp, 0, has_aux=False)
-        result = temp
-    elif order > 1 and lower_orders:
-        raise NotImplementedError()
-    else:
-        raise NotImplementedError()
-    return result
-
-def get_df_func(func: Callable[[torch.Tensor], torch.Tensor],
-           order: int, input: torch.Tensor)->torch.Tensor:
-    """
-    Evaluates the 'order'-differentiated 'func'
-    function on 'input' point.
-    Assumes that inputs are not batched.
-    """
-    assert order >= 0
-    if order == 0:
-        result = func(input)
-    else:
-        if input.requires_grad is False:
-            input.requires_grad_(True)
-        df = df_func(func, order, False)
-        result = df(input)
-    return result
-
-def get_df_func_batched(func: Callable[[torch.Tensor], torch.Tensor],
-           order: int, input: torch.Tensor)->torch.Tensor:
-    """
-    Evaluates the 'order'-differentiated 'func'
-    function on 'input' points.
-    Assumes that 'input' is batched
-    in its first dimension.
-    """
-    assert order >= 0
-    if order == 0:
-        result = func(input)
-    else:
-        if input.requires_grad is False:
-            input.requires_grad_(True)
-        df = df_func(func, order, False)
-        result = torch.vmap(df, 0)(input)
-    return result
-
-def get_df1(fx: torch.Tensor, x: torch.Tensor,
-           graph: bool) -> torch.Tensor:
-    """
-    Returns the (first-order) jacobian
-    of 'fx' with respect to 'x'.
-    Assumes that inputs are not batched.
-    """
-    assert x.requires_grad is True
-    if fx.numel() == 1:
-        result = torch.autograd.grad(fx, x, 
-                create_graph=graph,
-                allow_unused=True)[0]
-    else:
-        x_shape = x.shape
-        fx_shape = fx.shape
-        flat_fx = fx.flatten()
-        result = []
-        for i in range(flat_fx.numel()):
-            select = torch.tensor(
-                [0]*i + [1] + [0]*(flat_fx.numel()-i-1))
-            fxi = (flat_fx*select).sum()
-            result.append(
-                torch.autograd.grad(fxi, x,
-                        create_graph=graph,
-                        allow_unused=True))[0]
-        result = torch.stack(result, 0)
-    return result.view(fx_shape + x_shape)
-
-def get_df(fx: torch.Tensor, x: torch.Tensor,
-           order: int, graph: bool) -> torch.Tensor:
-    """
-    Returns the 'order'-rank jacobian
-    of 'fx' with respect to 'x'.
-    Assumes that inputs are not batched.
-    """
-    assert order >= 0
-    assert x.requires_grad is True
-    if order == 0:
+    if len(coords) == 0:
         result = fx
-    elif order == 1:
-        result = get_df1(fx, x, graph)
     else:
-        x_shape = x.shape
-        fx_shape = fx.shape
+        assert min(coords) >= 0
+        assert max(coords) < x.numel()
+        assert x.requires_grad == True
         result = fx
-        for i in range(order):
-            if i < order-1:
-                result = get_df1(result, x, True)
-            else:
-                result = get_df1(result, x, graph)
-    return result.view(fx_shape + x_shape*order)
+        for c in coords:
+            result = result.flatten()
+            temp = []
+            for i in range(result.numel()):
+                temp.append(
+                    torch.autograd.grad(
+                        result[i], x,
+                        create_graph=True,
+                        allow_unused=True)[0]
+                    )
+            result = torch.stack(temp, 0).view(
+                fx.numel(), x.numel()
+            )[:, c].view(fx.shape)
+    return result
 
-def get_df_batched(fx: torch.Tensor, x: torch.Tensor,
-           order: int, graph: bool) -> torch.Tensor:
+def get_partial_batched(
+        x: torch.Tensor, fx: torch.Tensor,
+        coords: list[int]) -> torch.Tensor:
     """
-    Returns the 'order'-rank "jacobian"
-    of 'fx' with respect to 'x'.
-    Assumes that both inputs are batched,
-    with the same batch shape, the first dimension.
+    Returns the mixed partial derivatives of
+    fx=f(x) for some function f.
+    If coords=[0,1], returns d_1 d_0 fx,
+    where d_y denotes differentiating along
+    the y-th derivative coordinate of 'x'
+    ('x' need not be a vector).
+    Assumes that both 'x' and 'fx'
+    are batched along the 0-th dimension.
     """
-    assert x.requires_grad is True
-    assert x.dim() > 1 and fx.dim() > 1
-    assert x.shape[0] == fx.shape[0]
-    def temp_df(tempfx: torch.Tensor, tempx: torch.Tensor):
-        return get_df(tempfx, tempx, order, graph)
-    result = torch.vmap(temp_df, in_dims = 0, out_dims=0)(fx, x)
+    if len(coords) == 0:
+        result = fx
+    else:
+        assert min(coords) >= 0
+        assert max(coords) < x.shape[1:].numel()
+        assert x.requires_grad == True
+        assert x.shape[0]==fx.shape[0]
+        fx_dim = fx.shape[1:].numel()
+        result = fx
+        for c in coords:
+            result = result.sum(0).flatten()
+            temp = []
+            for i in range(result.numel()):
+                temp.append(
+                    torch.autograd.grad(
+                        result[i], x,
+                        create_graph=True,
+                        allow_unused=True)[0]
+                    )
+            result = torch.stack(temp, -1).view(
+                x.shape[0], x.shape[1:].numel(), fx_dim
+            )[:, c, :].view(fx.shape)
     return result
