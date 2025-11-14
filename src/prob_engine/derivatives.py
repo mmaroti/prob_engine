@@ -13,7 +13,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from typing import Callable
 import torch
 
 def get_partial(
@@ -21,7 +20,11 @@ def get_partial(
         coords: list[int]) -> torch.Tensor:
     """
     Returns the mixed partial derivatives of 'fx'
-    as a function of 'x'.
+    as a function of 'x', according to 'coords'.
+    'x' is not necessarily a vector.
+    If coords=[0,1], returns d_1(d_2(f)), where
+    d_i is partial derivation by the i-th argument.
+    Assumes 'x' and 'fx' are not batched.
     """
     if len(coords) == 0:
         result = fx
@@ -49,12 +52,11 @@ def get_partial_batched(
         x: torch.Tensor, fx: torch.Tensor,
         coords: list[int]) -> torch.Tensor:
     """
-    Returns the mixed partial derivatives of
-    fx=f(x) for some function f.
-    If coords=[0,1], returns d_1 d_0 fx,
-    where d_y denotes differentiating along
-    the y-th derivative coordinate of 'x'
-    ('x' need not be a vector).
+    Returns the mixed partial derivatives of 'fx'
+    as a function of 'x', according to 'coords'.
+    'x' is not necessarily a vector.
+    If coords=[0,1], returns d_1(d_2(f)), where
+    d_i is partial derivation by the i-th argument.
     Assumes that both 'x' and 'fx'
     are batched along the 0-th dimension.
     """
