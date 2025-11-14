@@ -90,6 +90,8 @@ class Distribution:
         uses its mixed partial derivative at sample points.
         """
         from . import derivatives
+        if sample.requires_grad == False:
+            sample.requires_grad_(True)
         coords = list(range(0, self._event_size))
         batch_shape = sample.shape[:-1]
         assert sample.shape[-1] == self.event_shape
@@ -124,16 +126,74 @@ class Distribution:
         """
         assert coords.shape == self.event_shape
         margin_dim = int(coords.count_nonzero().item())
-        coords = (coords.abs() > 0)
-        assert coords.shape == self.event_shape
         batch_shape = sample.shape[:-1]
         assert sample.shape[-1] == margin_dim
         sample = sample.view((batch_shape.numel(), margin_dim))
         points = torch.empty((batch_shape.numel(), self._event_size))
         points[:, torch.logical_not(coords)] = \
             torch.fill(points[:, torch.logical_not(coords)], torch.inf)
-        points[:, coords] = sample
+        points[:, coords > 0] = sample
         return self.get_cdf(points).view(batch_shape)
+    
+    def get_pdf_marginal(self, coords: torch.Tensor,
+                         sample: torch.Tensor) -> torch.Tensor:
+        """
+        Returns pdf of the marginal distribution, where 'coords'
+        contains boolean values, and dimensions corresponding to
+        'True' are kept, and ones corresponding to 'False' are not.
+        In 'coords', values of 0 are taken to be 'False',
+        values other than 0 are taken to be 'True'.
+        e.g. For (X,Y), if coords=[1,0], returns the pdf of X.
+        """
+        from . import derivatives
+        assert coords.shape == self.event_shape
+        margin_dim = int(coords.count_nonzero().item())
+        batch_shape = sample.shape[:-1]
+        assert sample.shape[-1] == margin_dim
+        sample = sample.view((batch_shape.numel(), margin_dim))
+        if sample.requires_grad == False:
+            sample.requires_grad_(True)
+        cdf = self.get_cdf_marginal(coords, sample)
+        mix_coords = list(range(0, margin_dim))
+        if cdf.numel() == 1:
+            result = derivatives.get_partial(
+                sample, cdf, mix_coords)
+        else:
+            result = derivatives.get_partial_batched(
+                sample, cdf, mix_coords)
+        return result
+    
+    def get_pdf_conditional(self, coords: torch.Tensor,
+                         sample: torch.Tensor) -> torch.Tensor:
+        """
+        Returns conditional pdf, where 'coords' denotes
+        which coordinates are taken to be conditional.
+        For (X,Y), if coords=[1,0], returns
+        f_(X,Y)(x,y)/f_Y(y) if f_Y(y)>0, otherwise f_X(x),
+        where 'f' denotes probability density functions
+        (the choice of f_X(x) here is arbitrary).
+        Sometimes denoted by f_{X|Y}(x|y).
+        """
+        assert coords.shape == self.event_shape
+        margin_dim = int(coords.count_nonzero().item())
+        coords = (coords.abs() > 0)
+        batch_shape = sample.shape[:-1]
+        assert sample.shape[-1:] == self.event_shape
+        sample = sample.view((batch_shape.numel(), self.event_size))
+        if sample.requires_grad == False:
+            sample.requires_grad_(True)
+        f_XY = self.get_pdf(sample)
+        f_X = self.get_pdf_marginal(
+            coords, sample[:, coords > 0])
+        f_Y = self.get_pdf_marginal(
+            torch.logical_not(coords),
+            sample[:, torch.logical_not(coords)])
+        result = torch.empty(batch_shape)
+        fy_nz = f_Y > 0
+        fy_z = torch.logical_not(fy_nz)
+        result[fy_nz] = f_XY[fy_nz]/f_Y[fy_nz]
+        result[fy_z] = f_X[fy_z]
+        return result
 
     def get_rectangle_prob(self, sample: torch.Tensor) -> torch.Tensor:
         """
