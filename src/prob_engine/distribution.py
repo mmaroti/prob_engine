@@ -208,7 +208,7 @@ class Distribution:
         sample = sample.view((batch_shape.numel(), 2, self.event_size)
                              ).to(device=self._device)
         sides = sample[:, 1, :] - sample[:, 0, :]
-        assert (sides > 0).all()
+        assert (sides >= 0).all()
         combs01 = torch.bitwise_and(
             torch.arange(2**self.event_size,
                          device=self._device).unsqueeze(-1),
