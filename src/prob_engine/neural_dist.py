@@ -247,6 +247,60 @@ class SmoothCompactTransitionMixLayer(torch.nn.Module):
         output *= 1.0/self.weights.abs().sum()
         output = output.view(input.shape)
         return output
+    
+class AtanIdLayer(torch.nn.Module):
+    """Maps, coordinate-wise, into [0,1], using arctan."""
+    def __init__(self):
+        super().__init__()
+    
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        output = torch.atan(input)*(1/torch.pi)+0.5
+        return output
+
+class SigmoidLayer(torch.nn.Module):
+    """Maps, coordinate-wise, into [0,1], using sigmoid function."""
+    def __init__(self):
+        super().__init__()
+    
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        output = torch.sigmoid(input)
+        return output
+
+class TrigDuplicationLayer(torch.nn.Module):
+    """Replaces x by sin(x + d), sin(2x + 2d), sin(3x+3d), etc."""
+    def __init__(self, duplicates: int, device=None):
+        super().__init__()
+        self.duplicates = duplicates
+    
+    def forward(self, input: torch.Tensor)->torch.Tensor:
+        scale = torch.arange(1, self.duplicates+1, 1,
+                            dtype=torch.float32, device=input.device)
+        shift = torch.e * torch.arange(1, self.duplicates+1, 1,
+                            dtype=torch.float32, device=input.device)
+        input_shape = input.shape
+        temp = input.unsqueeze(-1) * scale + shift
+        output = torch.sin(temp).view(input_shape[:-1] + (input_shape[-1]*temp.shape[-1],))
+        return output
+
+class NormalDuplicationLayer(torch.nn.Module):
+    """Replaces x by the evaluation of shifted
+       normal distribution CDFs at x"""
+    def __init__(self, duplicates: int, device=None):
+        super().__init__()
+        self.duplicates = duplicates
+    
+    def forward(self, input: torch.Tensor)->torch.Tensor:
+        means = (1/float(self.duplicates))*torch.arange(1, self.duplicates+1, 1,
+                            dtype=torch.float32, device=input.device)
+        vars = 1/math.sqrt(float(self.duplicates))
+        input_shape = input.shape
+        temp = input.unsqueeze(-1)
+        sq2 = torch.tensor(2, device=input.device).sqrt()
+        arg = temp - means
+        arg = arg / (vars * sq2)
+        result = 0.5 + 0.5 * torch.erf(arg)
+        output = result.view(input_shape[:-1] + (input_shape[-1]*result.shape[-1],))
+        return output
 
 class ExponentialLayer(torch.nn.Module):
     def __init__(self):
