@@ -20,6 +20,61 @@ from typing import Iterator, Optional
 
 from .distribution import Distribution
 
+class einsumDensity(torch.nn.Module):
+    def __init__(self, size_in: int, size_out: int, resolution: int, device=None):
+        super().__init__()
+        assert size_in > 0 and size_out > 0 and resolution > 0
+        assert size_in == 3 and size_out == 1       #Temporary simplifying assumptions
+        self.size_in = size_in
+        self.size_out = size_out
+        self.resolution = resolution
+
+        self.weight = torch.nn.Parameter(
+            torch.empty(
+                (self.size_out, self.size_in, self.resolution, self.resolution),
+                device = device, dtype = torch.float32))
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        torch.nn.init.uniform_(self.weight, 0.0, 1.0)
+    
+    def weight_measure_1(self):
+        # \sum_{i,j,k} a_{i,j}b_{j,k}c_{k,i}
+        # tr(ABC)
+        A = self.weight[0,0,:]
+        B = self.weight[0,1,:]
+        C = self.weight[0,2,:]
+        AB = torch.einsum('ij,jk->ik', A, B)
+        ABC = torch.einsum('ik,kl->il', AB, C)
+        result = torch.einsum("ii", ABC)
+        print(result)
+        return result
+    
+    def weight_measure_2(self):
+        # \sum_{i,j,k} a_{i,j}b_{j,k}c_{i,k}
+        # tr((AB)^T C)
+        A = self.weight[0,0,:]
+        B = self.weight[0,1,:]
+        C = self.weight[0,2,:]
+        AB = torch.einsum('ij,jk->ik', A, B)
+        result = torch.einsum('ik,ik', AB, C)
+        print(result)
+        return result
+    
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        assert input.shape[-1] == self.size_in
+        assert len(input.shape) == 2    #Assume there is a single batch dimension
+        inds = input * self.resolution
+        inds = torch.minimum(inds.floor(),
+                torch.tensor([self.resolution-1])
+                ).to(dtype=torch.int64)
+        batch_range = torch.arange(
+            self.size_in).expand(input.shape[0], self.size_in)
+        selected = self.weight.squeeze(0)[batch_range, inds, inds.roll(-1, dims=-1)]
+        result = selected.prod(-1)      #a_{x,y}b_{y,z}c_{z,x}
+        norm_factor = (1.0/self.weight_measure_1().item())
+        result *= norm_factor
+        return result.unsqueeze(0)
 
 class PosLinearLayer(torch.nn.Module):
     def __init__(self, size_in: int, size_out: int, device=None):
