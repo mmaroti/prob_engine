@@ -100,3 +100,14 @@ def NN_training_test_2():
 def test_deriv():
     from .test_deriv import test
     test()
+
+@cli.command()
+def test_ugrid_composition():
+    from .composed_grids_tests import test1, test2, test3, test4
+    test1(); test2(); test3(); test4()
+
+@cli.command()
+def test_einsum_cdf():
+    from . import einsum_attempts
+    einsum_attempts.einsum_test()
+    einsum_attempts.einsum_comp_test()
