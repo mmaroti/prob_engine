@@ -247,14 +247,15 @@ class einsumCDF_32_B(torch.nn.Module):
         assert input.shape == batch_shape + (self.size_in,)
         pts = input.view((batch_shape.numel(), self.size_in))
         inds = torch.minimum((pts * self.resolution).floor(),
-                            torch.tensor([self.resolution-1])).to(dtype=torch.int64)
+                            torch.tensor([self.resolution-1], device=pts.device)).to(dtype=torch.int64)
         fracts = torch.frac(pts * self.resolution) + (pts >= 1.0)
         hot = torch.nn.functional.one_hot(inds, self.resolution).to(dtype=torch.float32) # (B, 3, resolution)
-        covered = (torch.arange(self.resolution) < inds.unsqueeze(-1)).int()
+        covered = (torch.arange(self.resolution, device=inds.device) < inds.unsqueeze(-1)).int()
         measured = covered + (hot * fracts.unsqueeze(-1))
         #print("measured", measured)
         measured *= math.pow(self.resolution,-1)
         ind_tensors = torch.einsum("Bi,Bj,Bk->Bijk", *measured.unbind(-2))
+        print(ind_tensors.device, self.cell_values().device)
         result = torch.einsum("Bijk,bijk->Bb",ind_tensors, self.cell_values())
         return result.view(batch_shape + (self.size_out,))
 
@@ -326,21 +327,22 @@ def einsum_comp_test():
 
 def einsum_training_test_image(path: str = "", train_steps: int = 10000, train_samples: int = 1000):
     from prob_engine.image_conversion import get_uniformgrid_from_image
-    ug = get_uniformgrid_from_image(path)
+    ug = get_uniformgrid_from_image(path, counts=torch.tensor([100, 100]))
     def target_cdf(input: torch.Tensor) -> torch.Tensor:
         batch_shape = input.shape[:-1]
         assert input.shape == batch_shape + (3,)
         #first coordinate is artificially added, as ug is defined on [0,1]^2
         #result will be scaled by the first coordinate, thus the slice
         #on {1}x[0,1]^2 will be the cdf of ug.
-        result = ug.get_cdf(input[...,1:])*input[...,1]
+        temp = ug.get_cdf(input[...,1:])
+        result = temp*input[...,0]
         return result
     model = torch.nn.Sequential(
-            einsumCDF_32_B(3, 10),
-            einsumCDF_32_B(3, 10),
-            einsumCDF_32_B(3, 10),
-            #einsumCDF_32_B(3, 10),
-            einsumCDF_32_B(1, 10),
+            einsumCDF_32_B(3, 10, ug.device),
+            einsumCDF_32_B(3, 10, ug.device),
+            einsumCDF_32_B(3, 10, ug.device),
+            #einsumCDF_32_B(3, 10, ug.device),
+            einsumCDF_32_B(1, 10, ug.device),
         )
     def training(steps: int = 10000, samples: int = 1000) -> None:
         from prob_engine.derivatives import get_partial_batched
@@ -354,18 +356,19 @@ def einsum_training_test_image(path: str = "", train_steps: int = 10000, train_s
             min_bound + 0.5 * width,
             max_bound - 0.5 * width,
             bins,
-            dtype=torch.float32)
+            dtype=torch.float32,
+            device=ug.device)
         sample2 = torch.meshgrid([sample1, sample1], indexing="xy")
         sample2 = torch.stack(sample2, dim=-1).view(
             torch.Size((bins*bins, 2)))
-        sample2 = torch.cat((sample2, torch.ones(sample2.shape[:-1] + (1,))), -1)
+        sample2 = torch.cat((sample2, torch.ones(sample2.shape[:-1] + (1,), device=ug.device)), -1)
 
         for step in range(steps):
             opt.zero_grad()
-            sample = torch.rand((samples, 3), dtype = torch.float32)
+            sample = torch.rand((samples, 3), dtype = torch.float32, device=ug.device)
             error = torch.pow(model.forward(sample) - target_cdf(sample), 2).sum()
             avg_error = error * (1.0/samples)
-            print(avg_error)
+            # print(avg_error)
             avg_error.backward()
             opt.step()
             if step % 500 == 0:
@@ -408,4 +411,5 @@ def einsum_training_test_image(path: str = "", train_steps: int = 10000, train_s
         pyplot.colorbar()
         pyplot.title("PDF plot")
         pyplot.show()
+
     training(train_steps, train_samples)

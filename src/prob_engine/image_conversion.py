@@ -18,17 +18,19 @@ import matplotlib as plt
 import torchvision.transforms as tf
 from PIL import Image
 from prob_engine.uniform_grid import UniformGrid
+import os
 
 def get_uniformgrid_from_image(path: str = "", counts: torch.Tensor = torch.tensor([512,512])) -> UniformGrid:
     if path == "":
         import os 
         dir_path = os.path.dirname(os.path.realpath(__file__))
-        img_path = dir_path+"\\images\\handdrawn.png"
+        img_path = os.path.join(dir_path, "images", "handdrawn.png")
         file_path = img_path
     else:
         file_path = path
     assert counts.dim() == 1 and counts.numel() == 2
     image = Image.open(file_path)
+    image = image.resize(tuple(counts.numpy()))
     my_tf = tf.Compose([
         tf.PILToTensor(),
         tf.Grayscale(),
@@ -37,16 +39,16 @@ def get_uniformgrid_from_image(path: str = "", counts: torch.Tensor = torch.tens
     assert img_tensor.dim() == 3 and img_tensor.shape[0] == 1
     img_tensor = img_tensor.squeeze(0)
     ug = UniformGrid(torch.tensor([[0.0,0.0],[1.0,1.0]]), counts)
-    ug._parameter = torch.nn.Parameter(img_tensor.to(dtype = torch.float32))
+    ug._parameter = torch.nn.Parameter(img_tensor.to(dtype = torch.float32, device=ug.device))
     return ug
 
 def test():
     import os 
     dir_path = os.path.dirname(os.path.realpath(__file__))
-    img_path = dir_path+"\\images\\handdrawn.png"
-    image = Image.open(img_path)
-    ug = get_uniformgrid_from_image()
-    image.show()
+    img_path = os.path.join(dir_path, "images", "handdrawn.png")
+    # image = Image.open(img_path)
+    ug = get_uniformgrid_from_image(counts=torch.tensor([100, 100]))
+    # image.show()
     ug.plot_exact_pdf(0.0, 1.0, bins = min(ug._counts.max().item(), 512))
-    image.close()
+    # image.close()
     ug.plot_exact_cdf(0.0, 1.0, bins = min(ug._counts.max().item(), 64))
