@@ -282,6 +282,7 @@ def einsum_test():
     res2 = c2.forward(pts2_2)
     print("c1 density", "\n", res1.squeeze(0), get_partial_batched(pts2_1, res1.squeeze(0), [0,1,2]), "\n", c1.cell_values(), c1.cell_values().sum(), c1.weight_measure())
     print("c2 density", "\n", res2.squeeze(0), get_partial_batched(pts2_2, res2.squeeze(0), [0,1,2]), "\n", c2.cell_values(), c2.cell_values().sum(), c2.weight_measure())
+    print("Finished einsum_test")
 
 def einsum_comp_test():
     #do self-composed cdf function...
@@ -322,3 +323,89 @@ def einsum_comp_test():
     pyplot.title("PDF plot")
     pyplot.show()
     print("Finished einsum_comp_test")
+
+def einsum_training_test_image(path: str = "", train_steps: int = 10000, train_samples: int = 1000):
+    from prob_engine.image_conversion import get_uniformgrid_from_image
+    ug = get_uniformgrid_from_image(path)
+    def target_cdf(input: torch.Tensor) -> torch.Tensor:
+        batch_shape = input.shape[:-1]
+        assert input.shape == batch_shape + (3,)
+        #first coordinate is artificially added, as ug is defined on [0,1]^2
+        #result will be scaled by the first coordinate, thus the slice
+        #on {1}x[0,1]^2 will be the cdf of ug.
+        result = ug.get_cdf(input[...,1:])*input[...,1]
+        return result
+    model = torch.nn.Sequential(
+            einsumCDF_32_B(3, 10),
+            einsumCDF_32_B(3, 10),
+            einsumCDF_32_B(3, 10),
+            #einsumCDF_32_B(3, 10),
+            einsumCDF_32_B(1, 10),
+        )
+    def training(steps: int = 10000, samples: int = 1000) -> None:
+        from prob_engine.derivatives import get_partial_batched
+        from matplotlib import pyplot
+        ug.plot_exact_pdf(0.0, 1.0, bins = min(ug._counts.max().item(), 512))
+        opt = torch.optim.Adam(model.parameters(), lr = 1e-3)
+
+        min_bound, max_bound, bins = 0, 1, 10
+        width = 1 / bins
+        sample1 = torch.linspace(
+            min_bound + 0.5 * width,
+            max_bound - 0.5 * width,
+            bins,
+            dtype=torch.float32)
+        sample2 = torch.meshgrid([sample1, sample1], indexing="xy")
+        sample2 = torch.stack(sample2, dim=-1).view(
+            torch.Size((bins*bins, 2)))
+        sample2 = torch.cat((sample2, torch.ones(sample2.shape[:-1] + (1,))), -1)
+
+        for step in range(steps):
+            opt.zero_grad()
+            sample = torch.rand((samples, 3), dtype = torch.float32)
+            error = torch.pow(model.forward(sample) - target_cdf(sample), 2).sum()
+            avg_error = error * (1.0/samples)
+            print(avg_error)
+            avg_error.backward()
+            opt.step()
+            if step % 500 == 0:
+                sample22 = sample2.requires_grad_(True)
+                value2 = model.forward(sample22)
+                pyplot.pcolormesh(
+                    sample1.cpu().numpy(),
+                    sample1.cpu().numpy(),
+                    value2.view(torch.Size((bins,bins))).cpu().detach().numpy(),
+                    rasterized=True)
+                pyplot.colorbar()
+                pyplot.title("CDF plot")
+                pyplot.show()
+                deriv = get_partial_batched(sample22, value2, [0,1,2]).view(torch.Size((bins,bins)))
+                pyplot.pcolormesh(
+                    sample1.cpu().numpy(),
+                    sample1.cpu().numpy(),
+                    deriv.cpu().detach().numpy(),
+                    rasterized=True)
+                pyplot.colorbar()
+                pyplot.title("PDF plot")
+                pyplot.show()
+        bins = 60
+        sample22 = sample2.requires_grad_(True)
+        value2 = model.forward(sample22)
+        pyplot.pcolormesh(
+            sample1.cpu().numpy(),
+            sample1.cpu().numpy(),
+            value2.view(torch.Size((bins,bins))).cpu().detach().numpy(),
+            rasterized=True)
+        pyplot.colorbar()
+        pyplot.title("CDF plot")
+        pyplot.show()
+        deriv = get_partial_batched(sample22, value2, [0,1,2]).view(torch.Size((bins,bins)))
+        pyplot.pcolormesh(
+            sample1.cpu().numpy(),
+            sample1.cpu().numpy(),
+            deriv.cpu().detach().numpy(),
+            rasterized=True)
+        pyplot.colorbar()
+        pyplot.title("PDF plot")
+        pyplot.show()
+    training(train_steps, train_samples)
