@@ -102,6 +102,11 @@ def test_deriv():
     test()
 
 @cli.command()
+def test_cdf_net():
+    from .cdf_net import cdf_net_tests
+    cdf_net_tests()
+
+@cli.command()
 def test_ugrid_composition():
     from .composed_grids_tests import test1, test2, test3, test4
     test1(); test2(); test3(); test4()
