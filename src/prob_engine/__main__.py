@@ -113,11 +113,16 @@ def test_einsum_cdf():
     einsum_attempts.einsum_comp_test()
 
 @cli.command()
-def image_conversion_test():
+def test_image_conversion():
     from . import image_conversion
     image_conversion.test()
 
 @cli.command()
-def einsum_image_training_test():
+def test_einsum_image_training():
     from . import einsum_attempts
     einsum_attempts.einsum_training_test_image()
+
+@cli.command()
+def test_cdf_net():
+    from . import cdf_net
+    cdf_net.test()
